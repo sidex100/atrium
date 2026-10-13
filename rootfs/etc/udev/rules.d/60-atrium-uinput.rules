@@ -1,0 +1,2 @@
+# 2026-10-03: Unified Remote - the user at the screen may create a virtual mouse/keyboard (/dev/uinput), like steam-devices
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

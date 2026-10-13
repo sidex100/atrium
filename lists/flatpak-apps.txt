@@ -1,0 +1,4 @@
+com.moonlight_stream.Moonlight
+com.spotify.Client
+com.valvesoftware.SteamLink
+net.retrodeck.retrodeck

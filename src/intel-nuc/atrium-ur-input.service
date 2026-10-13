@@ -1,0 +1,13 @@
+# 2026-10-03: split Unified Remote clicks into separate press/release events (GNOME/Wayland).
+# /etc/systemd/system/; source: vortex/atrium/atrium-ur-input.{py,service}
+[Unit]
+Description=atrium: Unified Remote clicks for Wayland (press/release split)
+After=systemd-udevd.service
+
+[Service]
+ExecStart=/usr/local/sbin/atrium-ur-input
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

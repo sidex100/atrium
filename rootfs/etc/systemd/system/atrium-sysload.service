@@ -1,0 +1,40 @@
+# 2026-10-06: CPU and AMD GPU load for the GNOME top bar (shown by the Executor extension).
+# /etc/systemd/system/; source: vortex/atrium/atrium-sysload.{py,service}
+# (Intel NUC version with CAP_PERFMON: atrium-sysload-intel.service)
+[Unit]
+Description=atrium: CPU and GPU load for the top bar
+
+[Service]
+ExecStart=/usr/local/sbin/atrium-sysload
+Restart=always
+RestartSec=5
+# least privilege: throwaway user, no capabilities (amdgpu load files are world-readable),
+# no network, read-only system; output is world-readable files in /run/atrium-sysload
+DynamicUser=yes
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+RuntimeDirectory=atrium-sysload
+RuntimeDirectoryMode=0755
+UMask=0022
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+# 2026-10-08: PrivateNetwork=yes removed - in its own namespace the service sees only lo and
+# cannot count the adapters; it still opens no network sockets (AF_UNIX only below)
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

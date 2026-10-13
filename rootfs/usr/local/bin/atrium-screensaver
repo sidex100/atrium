@@ -1,0 +1,168 @@
+#!/usr/bin/python3
+# atrium-screensaver - Apple Aerial clips on the TV after 15 min without input,
+# monitor off after 30 min.
+# 2026-10-03: GNOME has no screensaver (only blank), xscreensaver does not work on Wayland.
+# 2026-10-06: the monitor is switched off here, not by GNOME. GNOME's own blank (idle-delay)
+# raises the screen shield, and while the shield is up GNOME refuses screen sharing
+# (RDP: "Session creation inhibited"). So the TV user has idle-delay 0 and this service
+# turns the monitor off through Mutter DisplayConfig PowerSaveMode - the same switch
+# gnome-settings-daemon uses for its blank.
+# Runs in the GNOME session of the TV user (systemd user unit atrium-screensaver.service).
+# 15 min idle -> mpv full screen, no sound, clips in random order, in a loop;
+# 30 min idle -> mpv is closed, monitor off;
+# any key / mouse / remote / RDP input -> mpv is closed, monitor on.
+# Nothing happens while a player holds an idle inhibitor (film, YouTube); if the film ends
+# more than 30 min after the last input, the monitor goes off within a minute.
+import os
+import random
+import signal
+import subprocess
+import sys
+
+from gi.repository import Gio, GLib
+
+VIDEO_DIR = "/usr/local/share/atrium-screensaver/aerial"
+START_MS = 15 * 60 * 1000
+OFF_MS = 30 * 60 * 1000
+RETRY_S = 60      # inhibited at the 30 min mark: check again every minute
+INHIBIT_IDLE = 8  # GsmInhibitorFlag IDLE
+POWER_ON = 0      # Mutter PowerSaveMode: 0 on, 3 off
+POWER_OFF = 3
+
+MPV = ["mpv", "--no-config", "--fs", "--no-audio", "--loop-playlist=inf",
+       "--hwdec=auto", "--no-osc", "--osd-level=0", "--no-input-default-bindings",
+       "--cursor-autohide=always", "--stop-screensaver=no", "--no-terminal", "--"]
+
+bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+idle = Gio.DBusProxy.new_sync(bus, Gio.DBusProxyFlags.NONE, None,
+                              "org.gnome.Mutter.IdleMonitor",
+                              "/org/gnome/Mutter/IdleMonitor/Core",
+                              "org.gnome.Mutter.IdleMonitor", None)
+session = Gio.DBusProxy.new_sync(bus, Gio.DBusProxyFlags.NONE, None,
+                                 "org.gnome.SessionManager",
+                                 "/org/gnome/SessionManager",
+                                 "org.gnome.SessionManager", None)
+player = None
+active_watch = None
+monitor_off = False
+retry_id = 0
+
+
+def call(proxy, method, args=None):
+    return proxy.call_sync(method, args, Gio.DBusCallFlags.NONE, -1, None).unpack()
+
+
+def inhibited():
+    try:
+        return call(session, "IsInhibited", GLib.Variant("(u)", (INHIBIT_IDLE,)))[0]
+    except GLib.Error:
+        return False
+
+
+def set_power(mode):
+    try:
+        bus.call_sync("org.gnome.Mutter.DisplayConfig", "/org/gnome/Mutter/DisplayConfig",
+                      "org.freedesktop.DBus.Properties", "Set",
+                      GLib.Variant("(ssv)", ("org.gnome.Mutter.DisplayConfig", "PowerSaveMode",
+                                             GLib.Variant("i", mode))),
+                      None, Gio.DBusCallFlags.NONE, -1, None)
+        return True
+    except GLib.Error as e:
+        print(f"PowerSaveMode {mode} failed: {e.message}", file=sys.stderr, flush=True)
+        return False
+
+
+def watch_activity():
+    global active_watch
+    if active_watch is None:
+        active_watch = call(idle, "AddUserActiveWatch")[0]
+
+
+def start():
+    global player
+    if player is not None and player.poll() is None:
+        return
+    if inhibited():
+        return
+    try:
+        clips = [os.path.join(VIDEO_DIR, f) for f in os.listdir(VIDEO_DIR) if f.endswith(".mov")]
+    except OSError:
+        return
+    if not clips:
+        return
+    random.shuffle(clips)
+    player = subprocess.Popen(MPV + clips)
+    watch_activity()
+
+
+def stop():
+    global player
+    if player is not None and player.poll() is None:
+        player.terminate()
+        try:
+            player.wait(5)
+        except subprocess.TimeoutExpired:
+            player.kill()
+    player = None
+
+
+def screen_off():
+    global monitor_off, retry_id
+    stop()
+    watch_activity()
+    if inhibited():
+        if retry_id == 0:
+            retry_id = GLib.timeout_add_seconds(RETRY_S, retry)
+        return
+    monitor_off = set_power(POWER_OFF)
+
+
+def retry():
+    global retry_id
+    retry_id = 0
+    try:
+        if call(idle, "GetIdletime")[0] >= OFF_MS:
+            screen_off()
+    except GLib.Error:
+        pass
+    return GLib.SOURCE_REMOVE
+
+
+def wake():
+    global active_watch, monitor_off, retry_id
+    active_watch = None
+    stop()
+    if retry_id:
+        GLib.source_remove(retry_id)
+        retry_id = 0
+    if monitor_off:
+        set_power(POWER_ON)
+        monitor_off = False
+
+
+def on_signal(proxy, sender, name, params):
+    if name != "WatchFired":
+        return
+    watch = params.unpack()[0]
+    if watch == start_watch:
+        start()
+    elif watch == off_watch:
+        screen_off()
+    elif watch == active_watch:
+        wake()
+
+
+def on_term():
+    stop()
+    if monitor_off:
+        set_power(POWER_ON)
+    loop.quit()
+    return GLib.SOURCE_REMOVE
+
+
+start_watch = call(idle, "AddIdleWatch", GLib.Variant("(t)", (START_MS,)))[0]
+off_watch = call(idle, "AddIdleWatch", GLib.Variant("(t)", (OFF_MS,)))[0]
+idle.connect("g-signal", on_signal)
+loop = GLib.MainLoop()
+GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, on_term)
+loop.run()

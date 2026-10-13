@@ -1,0 +1,1 @@
+{"uuid": "atrium-brightness-value@atrium.example.com", "name": "atrium: brightness value", "description": "Shows the screen brightness in percent next to the brightness slider and on the on-screen bar while changing it (100 % = reference white in HDR).", "shell-version": ["50"], "version": 1}

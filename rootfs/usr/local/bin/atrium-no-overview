@@ -1,0 +1,18 @@
+#!/bin/sh
+# 2026-10-05 atrium: GNOME 50 opens the overview (search, workspaces) right after login;
+# extensions (Dash to Dock, Just Perfection) are loaded too late to prevent it.
+# Hide it through D-Bus: org.gnome.Shell OverviewActive (setter has no sender check).
+# Started once at login by ~/.config/autostart/atrium-no-overview.desktop; gives up after 15 s.
+i=0
+while [ "$i" -lt 30 ]; do
+    i=$((i + 1))
+    sleep 0.5
+    if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
+        --method org.freedesktop.DBus.Properties.Get org.gnome.Shell OverviewActive 2>/dev/null |
+        grep -q true; then
+        gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
+            --method org.freedesktop.DBus.Properties.Set org.gnome.Shell OverviewActive '<false>' >/dev/null
+        exit 0
+    fi
+done
+exit 0

@@ -1,0 +1,3 @@
+# 2026-10-13: atrium TV - dock icons fixed (no pin/unpin/reorder from the GUI); to change: edit here + dconf update
+[org/gnome/shell]
+favorite-apps=['org.gnome.Nautilus.desktop', 'google-chrome.desktop', 'chrome-bbjehehnadmajifhpcghklpigkppopkd-Default.desktop', 'org.mozilla.firefox.desktop', 'chromium-browser.desktop', 'io.github.TransmissionRemoteGtk.desktop', 'mpv.desktop', 'io.github.mpc_qt.mpc-qt.desktop', 'vlc.desktop', 'com.spotify.Client.desktop', 'org.fooyin.fooyin.desktop', 'net.retrodeck.retrodeck.desktop', 'steam.desktop', 'com.valvesoftware.SteamLink.desktop', 'com.moonlight_stream.Moonlight.desktop']

@@ -1,0 +1,157 @@
+#!/bin/bash
+# atrium-motd: short colored summary shown at SSH login (called from /etc/profile.d/atrium-login.sh).
+# Same layout as vortex-motd (vortex/box/vortex-motd.sh) and apex-motd; picture = a Roman portico
+# (atrium), warm gold like the evening wallpaper.
+# Only fast local sources (no dnf, no network calls). Must never break a login. ASCII only.
+# Installed as /usr/local/sbin/atrium-motd.
+# 2026-10-13: created; same day: both disks shown (/ and /srv) with drive temperature and model (user)
+
+if [ -t 1 ]; then
+    R=$'\e[0m'; B=$'\e[1m'; G=$'\e[90m'; RED=$'\e[31m'; GRN=$'\e[32m'; YEL=$'\e[33m'; W=$'\e[97m'
+    GLD=$'\e[38;5;179m'
+else
+    R= B= G= RED= GRN= YEL= W= GLD=
+fi
+
+hsize() { awk -v b="$1" 'BEGIN { split("B K M G T P", u); i = 1; while (b >= 1024 && i < 6) { b /= 1024; i++ }
+                                  printf (b < 10 && i > 1) ? "%.1f%s" : "%.0f%s", b, u[i] }'; }
+dfrow() {   # "used of size (pct)" for a mount point, red from 85 %
+    local used size pct p
+    read -r used size pct < <(df -h --output=used,size,pcent "$1" 2>/dev/null | tail -1)
+    p=${pct%\%}
+    if [ "${p:-0}" -ge 85 ]; then echo "$RED$used of $size ($pct)$R"; else echo "$used of $size ($pct)"; fi
+}
+
+# ---- values
+. /etc/os-release 2>/dev/null
+os="${PRETTY_NAME:-Linux}"
+kern=$(uname -r)
+read -r up _ < /proc/uptime; up=${up%.*}
+upt="$((up / 86400))d $((up % 86400 / 3600))h $((up % 3600 / 60))m"; [ "$up" -lt 86400 ] && upt="${upt#0d }"
+read -r l1 l2 l3 _ < /proc/loadavg
+ncpu=$(nproc)
+mt=$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo); ma=$(awk '/^MemAvailable:/ {print $2 * 1024}' /proc/meminfo)
+mem="$(hsize $((mt - ma))) of $(hsize "$mt") ($(( (mt - ma) * 100 / mt ))%)"
+
+# disks: usage of / (system NVMe) and /srv (media NVMe) + the drive under each: temperature and model.
+# Found by mount point, not by nvme0/nvme1 - those names swap between boots.
+dinfo() {   # "temp C  model" of the drive holding mount point $1; yellow from 70, red from 80
+    local pk t c m
+    pk=$(lsblk -no PKNAME "$(findmnt -no SOURCE "$1" 2>/dev/null)" 2>/dev/null | head -1)
+    [ -n "$pk" ] || { echo "-"; return; }
+    m=$(sed 's/ *$//' "/sys/block/$pk/device/model" 2>/dev/null)
+    t=$(cat /sys/block/"$pk"/device/hwmon*/temp1_input 2>/dev/null | head -1)
+    if [ -n "$t" ]; then
+        t=$((t / 1000)); c=$GRN; [ "$t" -ge 70 ] && c=$YEL; [ "$t" -ge 80 ] && c=$RED
+        echo "$c$t C$R  $m"
+    else
+        echo "$m"
+    fi
+}
+disk=$(dfrow /); dsys=$(dinfo /)
+if mountpoint -q /srv; then srv=$(dfrow /srv); dsrv=$(dinfo /srv); else srv="${RED}not mounted$R"; dsrv="-"; fi
+
+# CPU temperature (k10temp Tctl, the one Freon shows), yellow from 80, red from 90
+temp="-"
+for h in /sys/class/hwmon/hwmon*; do
+    [ "$(cat "$h/name" 2>/dev/null)" = k10temp ] || continue
+    t=$(( $(cat "$h/temp1_input" 2>/dev/null || echo 0) / 1000 ))
+    c=$GRN; [ "$t" -ge 80 ] && c=$YEL; [ "$t" -ge 90 ] && c=$RED
+    temp="$c$t C$R"
+done
+
+# wired: first en* device, link speed (yellow below 1G) and IPv4
+lan="-"; v4="-"
+for n in /sys/class/net/en*; do
+    [ -e "$n" ] || continue
+    dev=${n##*/}
+    if [ "$(cat "$n/operstate" 2>/dev/null)" = up ]; then
+        sp=$(cat "$n/speed" 2>/dev/null)
+        case "$sp" in
+            ''|-1) lan="$dev" ;;
+            *) if [ "$sp" -ge 1000 ]; then lan="$dev $GRN$(awk -v s="$sp" 'BEGIN { printf "%g", s / 1000 }')G$R"
+               else lan="$dev $YEL${sp}M$R"; fi ;;
+        esac
+    else
+        lan="$dev ${RED}no link$R"
+    fi
+    v4=$(ip -o -4 addr show dev "$dev" scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    break
+done
+
+# Wi-Fi: when connected, the internet goes through it (NetworkManager metric 50 < wired 100)
+wifi="-"
+for w in /sys/class/net/wl*; do
+    [ -e "$w" ] || continue
+    ifc=${w##*/}
+    if [ "$(cat "$w/operstate" 2>/dev/null)" = up ]; then
+        ssid=$(nmcli -g GENERAL.CONNECTION device show "$ifc" 2>/dev/null)
+        wifi="$ifc ${YEL}connected$R${ssid:+ ($ssid)}"
+    else
+        wifi="$ifc ${G}not connected$R"
+    fi
+done
+
+# display: connected outputs and their power state (off = screen turned off by atrium-screensaver)
+disp=""
+for c in /sys/class/drm/card*-*; do
+    [ "$(cat "$c/status" 2>/dev/null)" = connected ] || continue
+    name=${c##*/}; name=${name#*-}
+    case "$(cat "$c/dpms" 2>/dev/null)" in
+        On) disp="$disp${disp:+, }$name ${GRN}on$R" ;;
+        *)  disp="$disp${disp:+, }$name ${G}off$R" ;;
+    esac
+done
+[ -n "$disp" ] || disp="${YEL}no display$R"
+
+# failed units: system + the TV session of user view (atrium-screensaver and other user units)
+failed=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | paste -sd' ')
+ufailed=$(systemctl --user -M view@ --failed --no-legend --plain 2>/dev/null | awk '{print "view:" $1}' | paste -sd' ')
+failed="$failed${failed:+${ufailed:+ }}$ufailed"
+if [ -z "$failed" ]; then svc="${GRN}all running$R"; else svc="${RED}failed: $failed$R"; fi
+
+se=$(getenforce 2>/dev/null)
+case "$se" in Enforcing) se="${GRN}enforcing$R" ;; Permissive) se="${YEL}permissive$R" ;; *) se="$RED${se:-?}$R" ;; esac
+sbv=$(od -An -t u1 /sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c 2>/dev/null | awk '{print $NF}')
+case "$sbv" in 1) sb="${GRN}on$R" ;; 0) sb="${YEL}off$R" ;; *) sb="?" ;; esac
+sec="selinux $se, secure boot $sb"
+
+# kernel crash reports saved by the freeze trap (efi pstore -> systemd-pstore), red when present
+np=$(find /var/lib/systemd/pstore /sys/fs/pstore -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
+if [ "$np" -eq 0 ]; then pst="${GRN}none$R"; else pst="$RED$np - see /var/lib/systemd/pstore$R"; fi
+
+# ---- portico + text
+P=( '   _______' '  /_______\' '   | | | |' '   | | | |' '  _|_|_|_|_' )     # plain, for the width
+L=( "   $GLD""_______$G" "  $GLD/_______\\$G" "   $W| | | |$G" "   $W| | | |$G" "  $GLD""_|_|_|_|_$G" )
+# row "label value   label value": widths are counted on the text without color codes
+row() {
+    local v1=$2 p
+    p=$(printf '%s' "$v1" | sed 's/\x1b\[[0-9;]*m//g')
+    if [ -n "${3:-}" ]; then
+        printf '%s%-9s%s %s%*s  %s%-5s%s %s' "$G" "$1" "$R" "$v1" $((24 - ${#p})) "" "$G" "$3" "$R" "$4"
+    else
+        printf '%s%-9s%s %s' "$G" "$1" "$R" "$v1"
+    fi
+}
+T=( "$B$W$(hostname -f 2>/dev/null || hostname)$R"
+    "$G$os, kernel $kern$R"
+    ""
+    "$(row up "$upt" load "$l1 $l2 $l3 $G/ $ncpu cpu$R")"
+    "$(row memory "$mem" cpu "$temp")"
+    "$(row 'disk /' "$disk" nvme "$dsys")"
+    "$(row 'disk /srv' "$srv" nvme "$dsrv")"
+    "$(row lan "$lan" ipv4 "${v4:--}")"
+    "$(row display "$disp" wifi "$wifi")"
+    "$(row services "$svc")"
+    "$(row security "$sec")"
+    "$(row pstore "$pst")" )
+
+echo
+i=0
+while [ "$i" -lt "${#T[@]}" ] || [ "$i" -lt "${#P[@]}" ]; do
+    p=${P[$i]:-}
+    printf '%s%s%s%*s %s\n' "$G" "${L[$i]:-}" "$R" $((16 - ${#p})) "" "${T[$i]:-}"
+    i=$((i + 1))
+done
+echo
+exit 0

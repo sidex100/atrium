@@ -1,0 +1,547 @@
+--- a/Core/Input/remote.lua	(urserver 3.14.0.2574)
++++ b/Core/Input/remote.lua	(atrium)
+@@ -17,8 +17,126 @@
+ 	keyboard.stroke(unpack({...}));
+ end
+ 
++-- >>> atrium typing (shared: Core/Input/remote.lua and Main/Keyboards/keyboard.lua; source
++-- vortex/atrium/urserver/Core-Input-remote.lua, copied by build.py)
++-- 2026-10-04 atrium: on Linux (uinput) keyboard.text sends only plain keys: no Shift for
++-- capitals, nothing for punctuation. Type US-layout ASCII key by key, Shift as separate events.
++local US_KEYS = {
++	["`"] = "grave", ["-"] = "minus", ["="] = "equal", ["["] = "leftbrace", ["]"] = "rightbrace",
++	["\\"] = "backslash", [";"] = "semicolon", ["'"] = "apostrophe", [","] = "comma", ["."] = "dot",
++	["/"] = "slash", [" "] = "space", ["\t"] = "tab", ["\n"] = "return", ["\r"] = "return"
++};
++local US_SHIFT_KEYS = {
++	["~"] = "grave", ["_"] = "minus", ["+"] = "equal", ["{"] = "leftbrace", ["}"] = "rightbrace",
++	["|"] = "backslash", [":"] = "semicolon", ["\""] = "apostrophe", ["<"] = "comma", [">"] = "dot",
++	["?"] = "slash", [")"] = "digit0", ["!"] = "digit1", ["@"] = "digit2", ["#"] = "digit3",
++	["$"] = "digit4", ["%"] = "digit5", ["^"] = "digit6", ["&"] = "digit7", ["*"] = "digit8",
++	["("] = "digit9"
++};
++
++-- 2026-10-04 atrium: Russian letters -> keys of the "ru" (JCUKEN) layout.
++-- Letters are UTF-8 in decimal escapes (server files stay ASCII).
++local RU_KEYS = {
++	["\208\185"] = "q", ["\209\134"] = "w", ["\209\131"] = "e", ["\208\186"] = "r", ["\208\181"] = "t", ["\208\189"] = "y",
++	["\208\179"] = "u", ["\209\136"] = "i", ["\209\137"] = "o", ["\208\183"] = "p", ["\209\133"] = "leftbrace", ["\209\138"] = "rightbrace",
++	["\209\132"] = "a", ["\209\139"] = "s", ["\208\178"] = "d", ["\208\176"] = "f", ["\208\191"] = "g", ["\209\128"] = "h",
++	["\208\190"] = "j", ["\208\187"] = "k", ["\208\180"] = "l", ["\208\182"] = "semicolon", ["\209\141"] = "apostrophe", ["\209\143"] = "z",
++	["\209\135"] = "x", ["\209\129"] = "c", ["\208\188"] = "v", ["\208\184"] = "b", ["\209\130"] = "n", ["\209\140"] = "m",
++	["\208\177"] = "comma", ["\209\142"] = "dot", ["\209\145"] = "grave"
++};
++local RU_SHIFT_KEYS = {
++	["\208\153"] = "q", ["\208\166"] = "w", ["\208\163"] = "e", ["\208\154"] = "r", ["\208\149"] = "t", ["\208\157"] = "y",
++	["\208\147"] = "u", ["\208\168"] = "i", ["\208\169"] = "o", ["\208\151"] = "p", ["\208\165"] = "leftbrace", ["\208\170"] = "rightbrace",
++	["\208\164"] = "a", ["\208\171"] = "s", ["\208\146"] = "d", ["\208\144"] = "f", ["\208\159"] = "g", ["\208\160"] = "h",
++	["\208\158"] = "j", ["\208\155"] = "k", ["\208\148"] = "l", ["\208\150"] = "semicolon", ["\208\173"] = "apostrophe", ["\208\175"] = "z",
++	["\208\167"] = "x", ["\208\161"] = "c", ["\208\156"] = "v", ["\208\152"] = "b", ["\208\162"] = "n", ["\208\172"] = "m",
++	["\208\145"] = "comma", ["\208\174"] = "dot", ["\208\129"] = "grave"
++};
++
++-- 2026-10-04 atrium: symbols of the ru layout: numero sign (Shift+3) and ruble sign (AltGr+8;
++-- AltGr = right Alt via the xkb option lv3:ralt_switch).
++local RU_SYMBOLS = {
++	["\226\132\150"] = { "digit3", "shift" },
++	["\226\130\189"] = { "digit8", "altgr" }
++};
++
++-- 2026-10-04 atrium: iPhone "smart" punctuation is typed in its plain form:
++-- double quotes and guillemets -> ", single quotes -> ', en/em dash -> -, ellipsis -> ...
++local PLAIN = {
++	["\226\128\156"] = "\"", ["\226\128\157"] = "\"", ["\226\128\158"] = "\"",
++	["\194\171"] = "\"", ["\194\187"] = "\"",
++	["\226\128\152"] = "'", ["\226\128\153"] = "'",
++	["\226\128\147"] = "-", ["\226\128\148"] = "-",
++	["\226\128\166"] = "..."
++};
++
++-- 2026-10-04 atrium: which key gives the character, with which modifier ("shift", "altgr" or nil)
++-- and in which layout: "us", "ru", or nil when the key is the same in both (digits, space, tab, return).
++local function key_for(ch)
++	if ch:match("^%l$") then return ch, nil, "us"; end
++	if ch:match("^%u$") then return ch:lower(), "shift", "us"; end
++	if ch:match("^%d$") then return "digit" .. ch, nil, nil; end
++	local k = US_KEYS[ch];
++	if k == "space" or k == "tab" or k == "return" then return k, nil, nil; end
++	if US_KEYS[ch] then return US_KEYS[ch], nil, "us"; end
++	if US_SHIFT_KEYS[ch] then return US_SHIFT_KEYS[ch], "shift", "us"; end
++	if RU_KEYS[ch] then return RU_KEYS[ch], nil, "ru"; end
++	if RU_SHIFT_KEYS[ch] then return RU_SHIFT_KEYS[ch], "shift", "ru"; end
++	local s = RU_SYMBOLS[ch];
++	if s then return s[1], s[2], "ru"; end
++	return nil, nil, nil;
++end
++
++-- 2026-10-04 atrium: one key press with an optional modifier, each as separate events.
++local function press(key, mod)
++	local m = (mod == "shift" and "shift") or (mod == "altgr" and "rightalt") or nil;
++	if m then keyboard.down(m); os.sleep(5); end
++	keyboard.down(key);
++	os.sleep(10);
++	keyboard.up(key);
++	if m then os.sleep(5); keyboard.up(m); end
++end
++
++-- 2026-10-04 atrium: Unified Remote cannot see which layout is active, so before a character the
++-- layout it belongs to is selected with the xkb option grp:shift_caps_switch:
++-- Caps Lock = first layout (us), Shift+Caps Lock = last layout (ru).
++local function select_layout(layout)
++	local ru = (layout == "ru");
++	if ru then keyboard.down("shift"); os.sleep(5); end
++	keyboard.down("capslock");
++	os.sleep(10);
++	keyboard.up("capslock");
++	if ru then os.sleep(5); keyboard.up("shift"); end
++	os.sleep(10);
++end
++
++-- state.layout = layout selected during this call (nil = unknown)
++local function type_text(text, state)
++	local i = 1;
++	while i <= #text do
++		local b = text:byte(i);
++		local n = (b >= 0xF0 and 4) or (b >= 0xE0 and 3) or (b >= 0xC0 and 2) or 1;
++		local ch = text:sub(i, i + n - 1);
++		if PLAIN[ch] then
++			type_text(PLAIN[ch], state);
++		else
++			local key, mod, need = key_for(ch);
++			if key == nil then
++				keyboard.text(ch);
++			else
++				if need ~= nil and need ~= state.layout then select_layout(need); state.layout = need; end
++				press(key, mod);
++			end
++			os.sleep(10);
++		end
++		i = i + n;
++	end
++end
++-- <<< atrium typing
++
+ actions.Text = function (text)
+-	keyboard.text(text);
++	if text == nil then return; end
++	type_text(tostring(text), {}); -- tostring: the app sends digits as numbers
+ end
+ 
+ actions.MouseDown = function(...)
+@@ -30,11 +148,19 @@
+ end
+ 
+ actions.Click = function(...)
+-	mouse.click(unpack({...}));
++	-- 2026-10-03 atrium: on Wayland press and release must be separate events, else the click is lost
++	local buttons = {...};
++	mouse.down(unpack(buttons));
++	os.sleep(15);
++	mouse.up(unpack(buttons));
+ end
+ 
+ actions.DblClick = function(...)
+-	mouse.double(unpack({...}));
++	-- 2026-10-03 atrium: on Wayland press and release must be separate events, else the click is lost
++	local buttons = {...};
++	mouse.down(unpack(buttons)); os.sleep(15); mouse.up(unpack(buttons));
++	os.sleep(80);
++	mouse.down(unpack(buttons)); os.sleep(15); mouse.up(unpack(buttons));
+ end
+ 
+ actions.MoveBy = function(x, y)
+@@ -63,4 +189,4 @@
+ 
+ actions.ZoomOut = function ()
+ 	mouse.zoomout();
+-end
+\ No newline at end of file
++end
+--- a/Core/Mouse/remote.lua	(urserver 3.14.0.2574)
++++ b/Core/Mouse/remote.lua	(atrium)
+@@ -37,13 +37,21 @@
+ --@help Click mouse button(s)
+ --@param buttons:buttons Buttons to click
+ actions.click = function (...)
+-	mouse.click(unpack({...}));
++	-- 2026-10-03 atrium: on Wayland press and release must be separate events, else the click is lost
++	local buttons = {...};
++	mouse.down(unpack(buttons));
++	os.sleep(15);
++	mouse.up(unpack(buttons));
+ end
+ 
+ --@help Double click mouse button(s)
+ --@param buttons:buttons Buttons to double click
+ actions.double = function (...)
+-	mouse.double(unpack({...}));
++	-- 2026-10-03 atrium: on Wayland press and release must be separate events, else the click is lost
++	local buttons = {...};
++	mouse.down(unpack(buttons)); os.sleep(15); mouse.up(unpack(buttons));
++	os.sleep(80);
++	mouse.down(unpack(buttons)); os.sleep(15); mouse.up(unpack(buttons));
+ end
+ 
+ --@help Signal beginning of drag motion
+--- a/Main/Basic Input/remote.lua	(urserver 3.14.0.2574)
++++ b/Main/Basic Input/remote.lua	(atrium)
+@@ -3,6 +3,13 @@
+ 
+ local mouse = libs.mouse;
+ 
++-- 2026-10-03 atrium: on Wayland press and release must be separate events, else the click is lost
++local function click (button)
++	mouse.down(button);
++	os.sleep(15);
++	mouse.up(button);
++end
++
+ function update (r)
+ 	--server.update({id = "touch", text = r });
+ end
+@@ -22,13 +29,13 @@
+ 		mouse.dragend();
+ 		mouse.up();
+ 	else
+-		mouse.click("left");
++		click("left");
+ 	end
+ end
+ 
+ actions.double = function ()
+ 	update("double");
+-	mouse.double("left");
++	click("left"); os.sleep(80); click("left");
+ end
+ 
+ actions.hold = function ()
+@@ -44,9 +51,9 @@
+ end
+ 
+ actions.left = function ()
+-	mouse.click("left");
++	click("left");
+ end
+ 
+ actions.right = function ()
+-	mouse.click("right");
++	click("right");
+ end
+--- a/Main/Basic Input MT/remote.lua	(urserver 3.14.0.2574)
++++ b/Main/Basic Input MT/remote.lua	(atrium)
+@@ -3,6 +3,13 @@
+ 
+ local mouse = libs.mouse;
+ 
++-- 2026-10-03 atrium: on Wayland press and release must be separate events, else the click is lost
++local function click (button)
++	mouse.down(button);
++	os.sleep(15);
++	mouse.up(button);
++end
++
+ function update (r)
+ 	--server.update({id = "touch", text = r });
+ end
+@@ -22,13 +29,13 @@
+ 		mouse.dragend();
+ 		mouse.up();
+ 	else
+-		mouse.click("left");
++		click("left");
+ 	end
+ end
+ 
+ actions.double = function ()
+ 	update("double");
+-	mouse.double("left");
++	click("left"); os.sleep(80); click("left");
+ end
+ 
+ actions.hold = function ()
+@@ -44,9 +51,9 @@
+ end
+ 
+ actions.left = function ()
+-	mouse.click("left");
++	click("left");
+ end
+ 
+ actions.right = function ()
+-	mouse.click("right");
++	click("right");
+ end
+--- a/Main/Keyboards/keyboard.lua	(urserver 3.14.0.2574)
++++ b/Main/Keyboards/keyboard.lua	(atrium)
+@@ -1,3 +1,8 @@
++-- 2026-10-04 atrium: on-screen keyboards (Keyboard, Keyboard (Russian), Keyboard (Function), ...)
++-- reworked for Linux/uinput: every key types its own character whatever layout is active on atrium
++-- (typing code shared with Core/Input), Shift and Caps work like on a phone, Ctrl/Alt/Win combos
++-- are sent as separate key events. Original: keyboard.lua.bak-20261004.
++-- Built by vortex/atrium/urserver/build.py from keyboard.tmpl.lua; do not edit on the server.
+ local server = libs.server;
+ local keyboard = libs.keyboard;
+ 
+@@ -6,59 +11,217 @@
+ texts = {};
+ icons = {};
+ 
+-history = {};
+-modifiers = {};
+-modifying = false;
+-
+-actions.send = function ()
+-	local updates = {}
+-	local keys = {}
+-	for key,value in pairs(history) do
+-		table.insert(updates, { id = "key_" .. key, checked = false });
+-		table.insert(keys, key);
+-	end
+-	for key,value in pairs(modifiers) do
+-		table.insert(updates, { id = "key_" .. key, checked = false });
+-		table.insert(keys, key);
+-	end
+-	server.update(unpack(updates));
+-	keyboard.stroke(unpack(keys));
+-	history = {}
+-	modifiers = {};
+-	modifying = false;
++-- >>> atrium typing (shared: Core/Input/remote.lua and Main/Keyboards/keyboard.lua; source
++-- vortex/atrium/urserver/Core-Input-remote.lua, copied by build.py)
++-- 2026-10-04 atrium: on Linux (uinput) keyboard.text sends only plain keys: no Shift for
++-- capitals, nothing for punctuation. Type US-layout ASCII key by key, Shift as separate events.
++local US_KEYS = {
++	["`"] = "grave", ["-"] = "minus", ["="] = "equal", ["["] = "leftbrace", ["]"] = "rightbrace",
++	["\\"] = "backslash", [";"] = "semicolon", ["'"] = "apostrophe", [","] = "comma", ["."] = "dot",
++	["/"] = "slash", [" "] = "space", ["\t"] = "tab", ["\n"] = "return", ["\r"] = "return"
++};
++local US_SHIFT_KEYS = {
++	["~"] = "grave", ["_"] = "minus", ["+"] = "equal", ["{"] = "leftbrace", ["}"] = "rightbrace",
++	["|"] = "backslash", [":"] = "semicolon", ["\""] = "apostrophe", ["<"] = "comma", [">"] = "dot",
++	["?"] = "slash", [")"] = "digit0", ["!"] = "digit1", ["@"] = "digit2", ["#"] = "digit3",
++	["$"] = "digit4", ["%"] = "digit5", ["^"] = "digit6", ["&"] = "digit7", ["*"] = "digit8",
++	["("] = "digit9"
++};
++
++-- 2026-10-04 atrium: Russian letters -> keys of the "ru" (JCUKEN) layout.
++-- Letters are UTF-8 in decimal escapes (server files stay ASCII).
++local RU_KEYS = {
++	["\208\185"] = "q", ["\209\134"] = "w", ["\209\131"] = "e", ["\208\186"] = "r", ["\208\181"] = "t", ["\208\189"] = "y",
++	["\208\179"] = "u", ["\209\136"] = "i", ["\209\137"] = "o", ["\208\183"] = "p", ["\209\133"] = "leftbrace", ["\209\138"] = "rightbrace",
++	["\209\132"] = "a", ["\209\139"] = "s", ["\208\178"] = "d", ["\208\176"] = "f", ["\208\191"] = "g", ["\209\128"] = "h",
++	["\208\190"] = "j", ["\208\187"] = "k", ["\208\180"] = "l", ["\208\182"] = "semicolon", ["\209\141"] = "apostrophe", ["\209\143"] = "z",
++	["\209\135"] = "x", ["\209\129"] = "c", ["\208\188"] = "v", ["\208\184"] = "b", ["\209\130"] = "n", ["\209\140"] = "m",
++	["\208\177"] = "comma", ["\209\142"] = "dot", ["\209\145"] = "grave"
++};
++local RU_SHIFT_KEYS = {
++	["\208\153"] = "q", ["\208\166"] = "w", ["\208\163"] = "e", ["\208\154"] = "r", ["\208\149"] = "t", ["\208\157"] = "y",
++	["\208\147"] = "u", ["\208\168"] = "i", ["\208\169"] = "o", ["\208\151"] = "p", ["\208\165"] = "leftbrace", ["\208\170"] = "rightbrace",
++	["\208\164"] = "a", ["\208\171"] = "s", ["\208\146"] = "d", ["\208\144"] = "f", ["\208\159"] = "g", ["\208\160"] = "h",
++	["\208\158"] = "j", ["\208\155"] = "k", ["\208\148"] = "l", ["\208\150"] = "semicolon", ["\208\173"] = "apostrophe", ["\208\175"] = "z",
++	["\208\167"] = "x", ["\208\161"] = "c", ["\208\156"] = "v", ["\208\152"] = "b", ["\208\162"] = "n", ["\208\172"] = "m",
++	["\208\145"] = "comma", ["\208\174"] = "dot", ["\208\129"] = "grave"
++};
++
++-- 2026-10-04 atrium: symbols of the ru layout: numero sign (Shift+3) and ruble sign (AltGr+8;
++-- AltGr = right Alt via the xkb option lv3:ralt_switch).
++local RU_SYMBOLS = {
++	["\226\132\150"] = { "digit3", "shift" },
++	["\226\130\189"] = { "digit8", "altgr" }
++};
++
++-- 2026-10-04 atrium: iPhone "smart" punctuation is typed in its plain form:
++-- double quotes and guillemets -> ", single quotes -> ', en/em dash -> -, ellipsis -> ...
++local PLAIN = {
++	["\226\128\156"] = "\"", ["\226\128\157"] = "\"", ["\226\128\158"] = "\"",
++	["\194\171"] = "\"", ["\194\187"] = "\"",
++	["\226\128\152"] = "'", ["\226\128\153"] = "'",
++	["\226\128\147"] = "-", ["\226\128\148"] = "-",
++	["\226\128\166"] = "..."
++};
++
++-- 2026-10-04 atrium: which key gives the character, with which modifier ("shift", "altgr" or nil)
++-- and in which layout: "us", "ru", or nil when the key is the same in both (digits, space, tab, return).
++local function key_for(ch)
++	if ch:match("^%l$") then return ch, nil, "us"; end
++	if ch:match("^%u$") then return ch:lower(), "shift", "us"; end
++	if ch:match("^%d$") then return "digit" .. ch, nil, nil; end
++	local k = US_KEYS[ch];
++	if k == "space" or k == "tab" or k == "return" then return k, nil, nil; end
++	if US_KEYS[ch] then return US_KEYS[ch], nil, "us"; end
++	if US_SHIFT_KEYS[ch] then return US_SHIFT_KEYS[ch], "shift", "us"; end
++	if RU_KEYS[ch] then return RU_KEYS[ch], nil, "ru"; end
++	if RU_SHIFT_KEYS[ch] then return RU_SHIFT_KEYS[ch], "shift", "ru"; end
++	local s = RU_SYMBOLS[ch];
++	if s then return s[1], s[2], "ru"; end
++	return nil, nil, nil;
+ end
+ 
+-actions.toggle = function (key)
+-	if (keyboard.ismodifier(key)) then
+-		if (modifiers[key] == nil) then
+-			modifiers[key] = key;
+-			server.update({ id = "key_" .. key, checked = true });
+-			modifying = true;
++-- 2026-10-04 atrium: one key press with an optional modifier, each as separate events.
++local function press(key, mod)
++	local m = (mod == "shift" and "shift") or (mod == "altgr" and "rightalt") or nil;
++	if m then keyboard.down(m); os.sleep(5); end
++	keyboard.down(key);
++	os.sleep(10);
++	keyboard.up(key);
++	if m then os.sleep(5); keyboard.up(m); end
++end
++
++-- 2026-10-04 atrium: Unified Remote cannot see which layout is active, so before a character the
++-- layout it belongs to is selected with the xkb option grp:shift_caps_switch:
++-- Caps Lock = first layout (us), Shift+Caps Lock = last layout (ru).
++local function select_layout(layout)
++	local ru = (layout == "ru");
++	if ru then keyboard.down("shift"); os.sleep(5); end
++	keyboard.down("capslock");
++	os.sleep(10);
++	keyboard.up("capslock");
++	if ru then os.sleep(5); keyboard.up("shift"); end
++	os.sleep(10);
++end
++
++-- state.layout = layout selected during this call (nil = unknown)
++local function type_text(text, state)
++	local i = 1;
++	while i <= #text do
++		local b = text:byte(i);
++		local n = (b >= 0xF0 and 4) or (b >= 0xE0 and 3) or (b >= 0xC0 and 2) or 1;
++		local ch = text:sub(i, i + n - 1);
++		if PLAIN[ch] then
++			type_text(PLAIN[ch], state);
+ 		else
+-			actions.send();
+-		end
+-	else
+-		if (modifying) then
+-			if (history[key] == nil) then
+-				server.update({ id = "key_" .. key, checked = true });
+-				history[key] = key;
++			local key, mod, need = key_for(ch);
++			if key == nil then
++				keyboard.text(ch);
+ 			else
+-				server.update({ id = "key_" .. key, checked = false });
+-				history[key] = nil;
++				if need ~= nil and need ~= state.layout then select_layout(need); state.layout = need; end
++				press(key, mod);
+ 			end
+-		else
+-			if (keyboard.iskey(key)) then
+-				keyboard.press(key);
+-			elseif key == "AT" then
+-				keyboard.text("@");
+-			elseif key == "COMMA" then
+-				keyboard.text(",");
+-			else
+-				keyboard.text(key);
++			os.sleep(10);
++		end
++		i = i + n;
++	end
++end
++-- <<< atrium typing
++
++-- on-screen Cyrillic keys are capitals; lower/upper pairs come from the ru tables above
++local RU_LOWER = {};
++local RU_UPPER = {};
++do
++	local by_key = {};
++	for l, k in pairs(RU_KEYS) do by_key[k] = l; end
++	for u, k in pairs(RU_SHIFT_KEYS) do RU_LOWER[u] = by_key[k]; RU_UPPER[by_key[k]] = u; end
++end
++
++-- Shift + digit or punctuation: as on the US layout, or as on the ru layout for Keyboard (Russian)
++local US_SHIFTED = {
++	["1"] = "!", ["2"] = "@", ["3"] = "#", ["4"] = "$", ["5"] = "%", ["6"] = "^", ["7"] = "&",
++	["8"] = "*", ["9"] = "(", ["0"] = ")", ["-"] = "_", ["="] = "+", [","] = "<", ["."] = ">",
++	["/"] = "?", [";"] = ":", ["'"] = "\"", ["["] = "{", ["]"] = "}", ["\\"] = "|", ["`"] = "~"
++};
++local RU_SHIFTED = {
++	["1"] = "!", ["2"] = "\"", ["3"] = "\226\132\150", ["4"] = ";", ["5"] = "%", ["6"] = ":",
++	["7"] = "?", ["8"] = "*", ["9"] = "(", ["0"] = ")", ["-"] = "_", ["="] = "+", ["."] = ","
++};
++
++local MODS = { "CONTROL", "MENU", "LWIN", "RMENU", "SHIFT" }; -- order of pressing
++local mods = {};      -- sticky modifiers, one-shot: released after the next key
++local caps = false;   -- Caps on the on-screen keyboard: capitals until tapped again
++local russian = nil;  -- this remote shows Cyrillic keys
++
++local function is_russian()
++	if russian == nil then
++		russian = false;
++		for _, row in ipairs(keys) do
++			for _, k in ipairs(row) do
++				if RU_LOWER[k] then russian = true; end
+ 			end
+-			server.update({ id = "key_" .. key, checked = false });
+ 		end
+ 	end
++	return russian;
++end
++
++local function mark(key, on)
++	server.update({ id = "key_" .. key, checked = on });
++end
++
++-- character of an on-screen key; nil for named keys (ESCAPE, TAB, BACK, RETURN, F1, ...)
++local function char_of(key)
++	if key == "AT" then return "@"; end
++	if key == "COMMA" then return ","; end
++	if key == "SPACE" then return " "; end
++	if #key == 1 or not keyboard.iskey(key) then return key; end
++	return nil;
++end
++
++local function clear_mods()
++	for _, m in ipairs(MODS) do
++		if mods[m] then mods[m] = nil; mark(m, false); end
++	end
++end
++
++-- physical key with the sticky modifiers held, each as separate events
++local function send_combo(name)
++	local held = {};
++	for _, m in ipairs(MODS) do
++		if mods[m] then keyboard.down(m); table.insert(held, m); os.sleep(5); end
++	end
++	keyboard.down(name);
++	os.sleep(10);
++	keyboard.up(name);
++	for i = #held, 1, -1 do os.sleep(5); keyboard.up(held[i]); end
++end
++
++actions.toggle = function (key)
++	if key == "CAPITAL" then
++		caps = not caps;
++		mark(key, caps);
++		return;
++	end
++	if keyboard.ismodifier(key) then
++		if mods[key] then mods[key] = nil; mark(key, false); else mods[key] = true; mark(key, true); end
++		return;
++	end
++	local ch = char_of(key);
++	if ch == nil or mods.CONTROL or mods.MENU or mods.LWIN or mods.RMENU then
++		-- named key or a combo (Ctrl+C, Alt+Tab, ...): the physical key with the held modifiers
++		send_combo((ch and key_for(ch)) or key);
++	else
++		local lower = RU_LOWER[ch] or (ch:match("^%a$") and ch:lower());
++		if lower then
++			local upper = RU_UPPER[lower] or lower:upper();
++			if (mods.SHIFT and not caps) or (caps and not mods.SHIFT) then ch = upper; else ch = lower; end
++		elseif mods.SHIFT then
++			ch = (is_russian() and RU_SHIFTED[ch]) or US_SHIFTED[ch] or ch;
++		end
++		type_text(ch, {});
++	end
++	mark(key, false);
++	clear_mods();
+ end
+ 
+ events.preload = function ()

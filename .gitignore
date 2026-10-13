@@ -1,0 +1,7 @@
+# Built from vendor files by src/urserver/build.py - the result already lives in the patch
+src/urserver/keyboard.lua
+# Backups made while editing
+*.bak-*
+*.orig
+*.rej
+__pycache__/

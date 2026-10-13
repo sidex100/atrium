@@ -1,0 +1,8 @@
+{
+  "policies": {
+    "Preferences": {
+      "browser.startup.homepage": { "Value": "about:home", "Status": "default" },
+      "browser.newtabpage.pinned": { "Value": "[]", "Status": "default" }
+    }
+  }
+}

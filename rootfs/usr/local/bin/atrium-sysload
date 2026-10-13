@@ -1,0 +1,137 @@
+#!/usr/bin/python3
+# atrium-sysload - CPU and AMD GPU load for the GNOME top bar.
+# 2026-10-06 (Beelink SER5 MAX, Radeon 680M): GPU and video engine busyness come from the amdgpu
+# driver (sysfs gpu_busy_percent and vcn_busy_percent - world-readable, no privileges needed),
+# CPU load from /proc/stat. Single GPU reads jump between 0 and 100, so both files are read
+# 10 times a second and averaged. Once a second one line is written to /run/atrium-sysload/panel,
+# e.g. "CPU 12%   GPU 34%   VIDEO 5%":
+#   GPU = graphics engine (drawing: desktop, browser, mpv shaders),
+#   VIDEO = VCN video engine (hardware decoding; 0 while a video plays = decoded by the CPU;
+#           RDP sessions encode there too).
+# The Executor extension shows the file in the top bar (cat every second).
+# 2026-10-08: network speed like on Android phones, second file /run/atrium-sysload/net (Executor,
+# left side of the top bar), e.g. "LAN <down> 18.9 MB/s <up> 512 KB/s   Wi-Fi <down> 0 KB/s <up> 0 KB/s"
+# (arrows U+2193 / U+2191): every physical adapter that is up (cable plugged in / Wi-Fi connected),
+# so it is visible which one carries the traffic; bytes from /sys/class/net/<if>/statistics
+# (world-readable), 1 KB = 1000 B.
+# Intel NUC version (intel_gpu_top): atrium-sysload-intel.py.
+import glob
+import os
+import sys
+import time
+
+OUT = "/run/atrium-sysload/panel"
+NET_OUT = "/run/atrium-sysload/net"
+NET = "/sys/class/net"
+FIG = "\u2007"  # figure space (as wide as a digit) pads numbers, so the text does not jump
+DOWN, UP = "\u2193", "\u2191"
+SAMPLES = 10    # GPU reads per second
+
+
+def gpu_files():
+    for vcn in sorted(glob.glob("/sys/class/drm/card*/device/vcn_busy_percent")):
+        gfx = os.path.join(os.path.dirname(vcn), "gpu_busy_percent")
+        if os.path.exists(gfx):
+            return gfx, vcn
+    sys.exit("no amdgpu gpu_busy_percent / vcn_busy_percent in /sys/class/drm")
+
+
+def read_pct(path):
+    try:
+        with open(path) as f:
+            return int(f.read())
+    except (OSError, ValueError):
+        return None
+
+
+def cpu_times():
+    with open("/proc/stat") as f:
+        v = [int(x) for x in f.readline().split()[1:9]]  # user nice system idle iowait irq softirq steal
+    return sum(v), v[3] + v[4]
+
+
+def mean(values):
+    return sum(values) / len(values) if values else 0.0
+
+
+def pct(x):
+    return (str(round(x)) + "%").ljust(4, FIG)
+
+
+def write(text, path=OUT):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text + "\n")
+    os.replace(tmp, path)
+
+
+def read_text(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def adapters():
+    """physical adapters that are up: [(name, label, rx_bytes, tx_bytes)], cable first"""
+    out = []
+    for name in sorted(os.listdir(NET)):
+        if "/virtual/" in os.path.realpath(os.path.join(NET, name)):
+            continue                                   # lo, bridges, tunnels
+        if read_text(os.path.join(NET, name, "operstate")) != "up":
+            continue                                   # no cable / Wi-Fi not connected
+        wifi = os.path.isdir(os.path.join(NET, name, "wireless"))
+        try:
+            rx = int(read_text(os.path.join(NET, name, "statistics", "rx_bytes")))
+            tx = int(read_text(os.path.join(NET, name, "statistics", "tx_bytes")))
+        except ValueError:
+            continue
+        out.append((name, "Wi-Fi" if wifi else "LAN", rx, tx))
+    return sorted(out, key=lambda a: a[1] != "LAN")
+
+
+def speed(bytes_per_s):
+    k = bytes_per_s / 1000
+    if k < 1000:
+        return f"{k:.0f}".rjust(3, FIG) + " KB/s"
+    m = k / 1000
+    return (f"{m:.1f}" if m < 100 else f"{m:.0f}").rjust(4, FIG) + " MB/s"
+
+
+def net_line(prev, now, seconds):
+    parts = []
+    for name, label, rx, tx in now:
+        rx0, tx0 = prev.get(name, (rx, tx))
+        down = max(0, rx - rx0) / seconds
+        up = max(0, tx - tx0) / seconds
+        parts.append(f"{label} {DOWN} {speed(down)} {UP} {speed(up)}")
+    return "   ".join(parts) if parts else "no network"
+
+
+def main():
+    gfx_path, vcn_path = gpu_files()
+    total0, idle0 = cpu_times()
+    net0 = {name: (rx, tx) for name, _, rx, tx in adapters()}
+    t0 = time.monotonic()
+    while True:
+        gfx, vcn = [], []
+        for _ in range(SAMPLES):
+            time.sleep(1 / SAMPLES)
+            g, v = read_pct(gfx_path), read_pct(vcn_path)
+            if g is not None:
+                gfx.append(g)
+            if v is not None:
+                vcn.append(v)
+        total1, idle1 = cpu_times()
+        busy = (total1 - total0) - (idle1 - idle0)
+        cpu = 100.0 * busy / (total1 - total0) if total1 > total0 else 0.0
+        total0, idle0 = total1, idle1
+        write(f"CPU {pct(cpu)}   GPU {pct(mean(gfx))}   VIDEO {pct(mean(vcn))}")
+        net1, t1 = adapters(), time.monotonic()
+        write(net_line(net0, net1, max(t1 - t0, 0.001)), NET_OUT)
+        net0, t0 = {name: (rx, tx) for name, _, rx, tx in net1}, t1
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,1 @@
+{"uuid": "atrium-lock@atrium.example.com", "name": "atrium: lock gadgets", "description": "No menus and no settings by click on the temperature button (Freon) and the desktop widgets (Desktop Widgets). Executor is locked by its own setting.", "shell-version": ["50"], "version": 1}

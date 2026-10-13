@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=atrium no overview at login
+Comment=2026-10-05 atrium: hide the overview that GNOME 50 opens at login
+Exec=/usr/local/bin/atrium-no-overview
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

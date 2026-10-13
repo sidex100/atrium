@@ -1,0 +1,8 @@
+XDG_VIDEOS_DIR="/srv/video"
+XDG_MUSIC_DIR="/srv/music"
+XDG_DOWNLOAD_DIR="/srv/download"
+XDG_DESKTOP_DIR="$HOME/Desktop"
+XDG_TEMPLATES_DIR="$HOME/Templates"
+XDG_PUBLICSHARE_DIR="$HOME/Public"
+XDG_DOCUMENTS_DIR="/srv/docs"
+XDG_PICTURES_DIR="/srv/pics"

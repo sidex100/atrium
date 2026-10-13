@@ -1,0 +1,39 @@
+# 2026-10-04: CPU and Intel GPU load for the GNOME top bar (shown by the Executor extension).
+# /etc/systemd/system/; source: vortex/atrium/atrium-sysload.{py,service}
+[Unit]
+Description=atrium: CPU and Intel GPU load for the top bar
+
+[Service]
+ExecStart=/usr/local/sbin/atrium-sysload
+Restart=always
+RestartSec=5
+# least privilege: throwaway user, only CAP_PERFMON (Intel GPU counters), no network,
+# read-only system; output is one world-readable file in /run/atrium-sysload
+DynamicUser=yes
+AmbientCapabilities=CAP_PERFMON
+CapabilityBoundingSet=CAP_PERFMON
+NoNewPrivileges=yes
+RuntimeDirectory=atrium-sysload
+RuntimeDirectoryMode=0755
+UMask=0022
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

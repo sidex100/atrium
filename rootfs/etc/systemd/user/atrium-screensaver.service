@@ -1,0 +1,14 @@
+# 2026-10-03: Apple Aerial screensaver of the TV session (GNOME has none, only blank).
+# /etc/systemd/user/, enabled for all users: systemctl --global enable atrium-screensaver.service
+[Unit]
+Description=atrium screensaver (Apple Aerial after 15 min idle)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/local/bin/atrium-screensaver
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=graphical-session.target
