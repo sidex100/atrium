@@ -1,11 +1,11 @@
 # Установка atrium с нуля
 
-[English version](../en/install.md) · [Железо и BIOS](hardware.md) · [Обновления](updates.md) · [Известные проблемы](problems.md)
+[English version](../en/install.md) · [Железо и BIOS](hardware.md) · [Обновления](updates.md) · [Известные проблемы](problems.md) · [Вывод на ТВ](tv-output.md) · [Стрим игр](streaming.md)
 
 Эта инструкция повторяет atrium по шагам: от голого бокса до медиацентра у ТВ. У каждого шага сказано,
 что делаем и зачем. Команды взяты из истории настоящей установки и проверены на живом боксе.
 
-**Как читать команды.** Всё, что начинается в блоке `bash`, выполняется на боксе от `root` по SSH, если не
+**Как читать команды.** Всё в блоках `bash` выполняется на боксе от `root` по SSH, если не
 сказано иначе. Блоки `powershell` выполняются на компьютере с Windows. Каждый блок можно вставлять
 целиком: нужные переменные объявлены в его начале.
 
@@ -57,14 +57,14 @@
 **Зачем именно так.** Сетевой установщик Fedora Everything ставит голую систему, без набора программ
 Workstation. Дальше мы ставим ровно то, что нужно медиацентру, и знаем каждый пакет.
 
-1. Скачай **Fedora Everything, Network Install, x86_64** — https://fedoraproject.org/misc/#everything
+1. Скачай **Fedora Everything, Network Install, x86_64** — https://fedoraproject.org/misc/ (раздел Everything)
    (у нас Fedora 44). Запиши флешку программой Fedora Media Writer или `dd`.
 2. Загрузись с флешки (F7 → флешка) и пройди установщик:
    - **Language:** English (United States). Русский интерфейс GNOME не нужен, а в консоли английский
      надёжнее.
    - **Keyboard:** English (US).
    - **Time & Date:** регион Etc / UTC — системные часы в UTC, местное время пользователь ТВ получает
-     отдельно (шаг 8). В **NTP servers** мы указали домашний роутер `mag-gw.lan`; можно оставить пул
+     отдельно (шаг 9). В **NTP servers** мы указали домашний роутер (`router.lan`); можно оставить пул
      Fedora по умолчанию.
    - **Software Selection:** **Fedora Custom Operating System**, без дополнений. Это самая голая база.
    - **Installation Destination:** выбери **только системный диск** (у нас Crucial P3 Plus 1 ТБ), второй
@@ -249,8 +249,14 @@ flatpak install -y --noninteractive flathub com.spotify.Client
 - **Обои** — картина Гюстава Буланже (1861, общественное достояние) с подписью ATRIUM. Вечерний вариант:
   тёплый свет в центре, тёмные края. Генератор лежит в `src/wallpaper/`.
 - **Файлы пользователя `view`.** Ассоциации (видео → mpv, явный звук → fooyin, ссылки → Chrome), настройки
-  mpv, MPC-QT и VLC, часовой пояс ТВ, папки «Видео/Музыка/Загрузки/Документы/Изображения» в `/srv`,
-  закладки файлового менеджера, режим экрана (`monitors.xml`).
+  mpv, MPC-QT и VLC, часовой пояс ТВ (в репозитории пример `TZ=UTC` — поставь свой), папки «Видео/Музыка/Загрузки/Документы/Изображения» в `/srv`,
+  закладки файлового менеджера, режим экрана (`monitors.xml`: 3840×2160, 120 Гц, масштаб 250 %, SDR).
+- **Авто-HDR.** Рабочий стол работает в SDR: в HDR GNOME пересобирает каждый кадр, и видеокарте не
+  хватает запаса на 4K HDR в браузере. HDR включается сам, только пока mpv играет HDR-видео (PQ или HLG):
+  скрипт `auto-hdr.lua` в настройках mpv ставит паузу, вызывает `atrium-hdr on` и через 2 секунды
+  продолжает; когда видео кончилось или mpv закрыт — `atrium-hdr off`. ТВ при каждом переключении моргает
+  на 1–2 секунды. Пока подключён RDP, `atrium-hdr` экран не переключает (GNOME 50 падал при смене экрана
+  во время RDP). Вручную: `atrium-hdr on|off|status` от пользователя `view`.
 
 ```bash
 R=/root/atrium/rootfs
@@ -260,6 +266,7 @@ install -D -m 644 -t /etc/dconf/db/local.d $R/etc/dconf/db/local.d/00-atrium-dar
 install -D -m 644 -t /etc/dconf/db/local.d/locks $R/etc/dconf/db/local.d/locks/00-atrium-dark $R/etc/dconf/db/local.d/locks/00-atrium-dock
 dconf update
 install -m 755 $R/usr/local/bin/atrium-no-overview /usr/local/bin/atrium-no-overview
+install -m 755 $R/usr/local/bin/atrium-hdr /usr/local/bin/atrium-hdr
 install -D -m 644 -t /usr/local/share/backgrounds/atrium $R/usr/local/share/backgrounds/atrium/atrium-painting-evening-v2-4k.png
 cp -r --no-preserve=ownership $R/home/view/.config/. /home/view/.config/ && chown -R view:view /home/view/.config && chmod 600 /home/view/.config/vlc/vlcrc
 restorecon -R /etc/firefox /etc/chromium /etc/dconf /usr/local /home/view
@@ -381,7 +388,7 @@ systemctl --global enable atrium-screensaver.service
 systemctl --user -M view@ daemon-reload && systemctl --user -M view@ start atrium-screensaver.service && systemctl --user -M view@ is-active atrium-screensaver.service
 ```
 
-## 12. Звук: только USB-ЦАП, частота под трек
+## 12. Звук и параметры ядра (в том числе HDMI 2.1)
 
 **Зачем.** Встроенный аналоговый звук бокса (`1022:15e3`) в BIOS не выключается. Мы прячем его от системы
 параметром ядра `pci-stub`, и единственной звуковой картой остаётся USB-ЦАП: никакого выбора выхода, всё
@@ -398,17 +405,18 @@ systemctl --user -M view@ daemon-reload && systemctl --user -M view@ start atriu
   объяснены на шаге 16.
 
 `grubby --update-kernel=ALL` в Fedora сам дописывает параметры и в `/etc/default/grub`, а иногда и в
-`/etc/kernel/cmdline`, поэтому в `/etc/kernel/cmdline` добавляем только то, чего там ещё нет.
+`/etc/kernel/cmdline`, поэтому в `/etc/kernel/cmdline` добавляем только то, чего там ещё нет. Если
+`/etc/kernel/cmdline` нет, новые ядра возьмут параметры из текущей загрузки — пропускаем.
 
 ```bash
 A="pci-stub.ids=1022:15e3 efi_pstore.pstore_disable=0 amdgpu.ppfeaturemask=0xfff73fff amdgpu.dcfeaturemask=0x402"
 R=/root/atrium/rootfs
-for f in /etc/kernel/cmdline /etc/default/grub; do \cp -p $f $f.bak-$(date +%Y%m%d); done
+for f in /etc/kernel/cmdline /etc/default/grub; do [ ! -f $f ] || \cp -p $f $f.bak-$(date +%Y%m%d); done
 grubby --update-kernel=ALL --args="$A"
-for p in $A; do grep -q -- "$p" /etc/kernel/cmdline || sed -i "1s|\$| $p|" /etc/kernel/cmdline; done
+[ ! -f /etc/kernel/cmdline ] || for p in $A; do grep -q -- "$p" /etc/kernel/cmdline || sed -i "1s|\$| $p|" /etc/kernel/cmdline; done
 install -m 644 $R/etc/default/grub /etc/default/grub
 install -D -m 644 $R/etc/pipewire/pipewire.conf.d/50-atrium-rates.conf /etc/pipewire/pipewire.conf.d/50-atrium-rates.conf
-grubby --info=ALL | grep -E "^args"; cat /etc/kernel/cmdline
+grubby --info=ALL | grep -E "^args"; cat /etc/kernel/cmdline 2>/dev/null
 ```
 
 Изменения затронут три места:
@@ -530,7 +538,8 @@ r="rule family=\"ipv4\" source address=\"$L\" service name=\"rdp\" accept"; fire
 - **RetroDECK** — эмуляторы PS1, PS2, PS3, PSP и других консолей в одном пакете с меню для геймпада.
 - **Steam** — игры для Linux и Windows через Proton.
 - **Steam Link и Moonlight** — стрим игр с мощного ПК. У нас на ПК стоит Apollo (форк Sunshine), поток
-  4K 60 Гц в AV1.
+  3840×2160 при 120 к/с в AV1, 150 Мбит/с. Настройка сервера и клиента, сеть и MikroTik —
+  [streaming.md](streaming.md).
 - **steam-devices** — права на геймпады (DualSense Edge и другие) для пользователя у экрана.
 
 ```bash
@@ -574,7 +583,8 @@ grep -nE '^(video_fullscreen_[xy]|audio_driver|input_joypad_driver|menu_swap_ok_
 
 ## 16. Ловушка на зависания
 
-**Зачем.** Бокс дважды завис ночью, когда экран был выключен, и не оставил никаких следов. Ловушка
+**Зачем.** Бокс завис ночью, когда экран был выключен, и не оставил никаких следов (12.10; похожий
+случай 07.10 мог иметь внешнюю причину). Ловушка
 сделает так, что в следующий раз он перезагрузится сам и оставит отчёт:
 
 - **аппаратный сторожевой таймер** материнской платы (SP5100 TCO): если ядро не отзывается 60 секунд,
@@ -583,7 +593,7 @@ grep -nE '^(video_fullscreen_[xy]|audio_driver|input_joypad_driver|menu_swap_ok_
 - **отчёт о панике** пишется в память UEFI (pstore), после загрузки systemd переносит его в
   `/var/lib/systemd/pstore`. Заставка при входе по SSH покажет это красной строкой `pstore`;
 - **GFXOFF выключен** (`amdgpu.ppfeaturemask` без бита `0x8000`). Глубокий сон видеоядра при выключенном
-  экране — первый подозреваемый. Боксу от розетки это засыпание графики не нужно (экономия — доли ватта),
+  экране — один из подозреваемых. Боксу от розетки это засыпание графики не нужно (экономия — доли ватта),
   поэтому оставляем выключенным насовсем. Параметр ядра добавлен на шаге 12.
 
 ```bash
@@ -615,9 +625,10 @@ reboot
 ```
 
 **Экран.** Если ТВ и подключение те же, что у нас (LG C3 в HDMI бокса, в GNOME это `HDMI-1`),
-`monitors.xml` из шага 9 уже задаёт 3840×2160 при 120 Гц, масштаб 250 % и HDR. Иначе выставь это у ТВ в «Настройки → Дисплеи».
-С HDR в быстром меню появляется ползунок яркости HDR. Заводская нейтраль — 100 %, мы держим около 110 %.
-После перезагрузки ползунок снова встаёт на 100 %.
+`monitors.xml` из шага 9 уже задаёт 3840×2160 при 120 Гц, масштаб 250 % и SDR. Иначе выставь это у ТВ в
+«Настройки → Дисплеи». HDR вручную не включай: его включает mpv на HDR-видео (шаг 9, «Авто-HDR»). Пока HDR
+включён, в быстром меню есть ползунок яркости HDR. Заводская нейтраль — 100 %, мы держим около 110 %. При
+каждом включении HDR ползунок снова встаёт на 100 %.
 
 **Проверка.** Всё должно быть зелёным:
 
@@ -636,7 +647,7 @@ cat /sys/class/watchdog/watchdog0/state
 Ожидаемо:
 
 - нет упавших служб;
-- в `/proc/cmdline` есть три наших параметра;
+- в `/proc/cmdline` есть четыре наших параметра;
 - в `aplay -l` один ЦАП;
 - `/srv` смонтирован;
 - профилей VA-API больше десятка;

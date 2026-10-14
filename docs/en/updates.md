@@ -69,7 +69,7 @@ Packages do not touch our own files, but new versions of programs may fail to "u
    - Dash to Dock, Freon and Just Perfection are installed as Fedora packages and will be updated together
      with the system.
 2. **Our extensions use gnome-shell internals**: the brightness slider, the Freon menu, the Desktop
-   Widgets widgets, the "Do Not Disturb" icon. They can break even on an update within GNOME 50.x. Then
+   Widgets gadgets, the "Do Not Disturb" icon. They can break even on an update within GNOME 50.x. Then
    the extension gets the ERROR state, and the gadget simply stops being locked or stops showing the
    number. The session does not crash.
 3. **The screensaver** turns the screen off through `org.gnome.Mutter.DisplayConfig.PowerSaveMode` and
@@ -96,6 +96,9 @@ Packages do not touch our own files, but new versions of programs may fail to "u
     After moving to 7.4, look at the new default (`modinfo -p amdgpu`, the `amd_shared.h` source) and most
     likely remove the parameter: our mask may turn off new features that 7.4 enables by itself. How to
     check that HDMI 2.1 is in use after a kernel update — below and in [tv-output.md](tv-output.md).
+11. **Auto HDR** (`atrium-hdr`, `auto-hdr.lua`) relies on `gdctl` and the `color-mode` property of the
+    DisplayConfig D-Bus interface — that is GNOME. After a GNOME update, check as `view`: `atrium-hdr status`
+    answers `sdr`, and an HDR film in mpv turns HDR on and off.
 
 ## Checking after an update
 
@@ -113,7 +116,7 @@ rpm -V urserver | grep remotes
 
 Expected:
 
-- our three kernel parameters are in place;
+- our four kernel parameters are in place;
 - no failed services;
 - all extensions are `ACTIVE`;
 - VA-API profiles are present;

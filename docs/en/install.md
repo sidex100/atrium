@@ -1,6 +1,6 @@
 # Installing atrium from scratch
 
-[Русская версия](../ru/install.md) · [Hardware and BIOS](hardware.md) · [Updates](updates.md) · [Known problems](problems.md)
+[Русская версия](../ru/install.md) · [Hardware and BIOS](hardware.md) · [Updates](updates.md) · [Known problems](problems.md) · [TV output](tv-output.md) · [Game streaming](streaming.md)
 
 This guide rebuilds atrium step by step: from a bare box to a media center by the TV. Each step says
 what we do and why. The commands come from the history of the real installation and were tested on the
@@ -62,14 +62,14 @@ your HDMI port does not carry HDMI 2.1 — [tv-output.md](tv-output.md).
 **Why this way.** The Fedora Everything network installer sets up a bare system, without the Workstation
 set of programs. After that we install exactly what a media center needs, and we know every package.
 
-1. Download **Fedora Everything, Network Install, x86_64** — https://fedoraproject.org/misc/#everything
+1. Download **Fedora Everything, Network Install, x86_64** — https://fedoraproject.org/misc/ (the Everything section)
    (we use Fedora 44). Write the USB stick with Fedora Media Writer or `dd`.
 2. Boot from the stick (F7 → the stick) and go through the installer:
    - **Language:** English (United States). A Russian GNOME interface is not needed, and English is more
      reliable in the console.
    - **Keyboard:** English (US).
    - **Time & Date:** region Etc / UTC — the system clock runs in UTC, and the TV user gets local time
-     separately (step 8). In **NTP servers** we entered the home router `mag-gw.lan`; you can keep the
+     separately (step 9). In **NTP servers** we entered the home router (`router.lan`); you can keep the
      default Fedora pool.
    - **Software Selection:** **Fedora Custom Operating System**, no add-ons. This is the barest base.
    - **Installation Destination:** select **only the system drive** (ours is a Crucial P3 Plus 1 TB), do
@@ -256,9 +256,15 @@ check it with `rpm -qi gpg-pubkey-d38b4796`.
 - **Wallpaper** — a painting by Gustave Boulanger (1861, public domain) with the caption ATRIUM. Evening
   version: warm light in the center, dark edges. The generator is in `src/wallpaper/`.
 - **Files of the user `view`.** File associations (video → mpv, explicit audio → fooyin, links →
-  Chrome), settings for mpv, MPC-QT and VLC, the TV's time zone, the folders
+  Chrome), settings for mpv, MPC-QT and VLC, the TV's time zone (the repository has the example `TZ=UTC` — set yours), the folders
   "Videos/Music/Downloads/Documents/Pictures" in `/srv`, file manager bookmarks, the display mode
-  (`monitors.xml`).
+  (`monitors.xml`: 3840×2160, 120 Hz, 250 % scale, SDR).
+- **Auto HDR.** The desktop runs in SDR: in HDR GNOME re-composes every frame, and the GPU has no headroom
+  left for 4K HDR in the browser. HDR turns on by itself only while mpv plays an HDR video (PQ or HLG):
+  the `auto-hdr.lua` script in the mpv settings pauses, calls `atrium-hdr on` and resumes 2 seconds later;
+  when the video is over or mpv is closed — `atrium-hdr off`. The TV blanks for 1–2 seconds on each
+  switch. While an RDP client is connected, `atrium-hdr` does not switch the screen (GNOME 50 crashed on a
+  display change during RDP). By hand: `atrium-hdr on|off|status` as the user `view`.
 
 ```bash
 R=/root/atrium/rootfs
@@ -268,6 +274,7 @@ install -D -m 644 -t /etc/dconf/db/local.d $R/etc/dconf/db/local.d/00-atrium-dar
 install -D -m 644 -t /etc/dconf/db/local.d/locks $R/etc/dconf/db/local.d/locks/00-atrium-dark $R/etc/dconf/db/local.d/locks/00-atrium-dock
 dconf update
 install -m 755 $R/usr/local/bin/atrium-no-overview /usr/local/bin/atrium-no-overview
+install -m 755 $R/usr/local/bin/atrium-hdr /usr/local/bin/atrium-hdr
 install -D -m 644 -t /usr/local/share/backgrounds/atrium $R/usr/local/share/backgrounds/atrium/atrium-painting-evening-v2-4k.png
 cp -r --no-preserve=ownership $R/home/view/.config/. /home/view/.config/ && chown -R view:view /home/view/.config && chmod 600 /home/view/.config/vlc/vlcrc
 restorecon -R /etc/firefox /etc/chromium /etc/dconf /usr/local /home/view
@@ -392,7 +399,7 @@ systemctl --global enable atrium-screensaver.service
 systemctl --user -M view@ daemon-reload && systemctl --user -M view@ start atrium-screensaver.service && systemctl --user -M view@ is-active atrium-screensaver.service
 ```
 
-## 12. Sound: USB DAC only, sample rate follows the track
+## 12. Sound and kernel parameters (including HDMI 2.1)
 
 **Why.** The box's built-in analog audio (`1022:15e3`) cannot be turned off in the BIOS. We hide it from
 the system with the `pci-stub` kernel parameter, and the USB DAC remains the only sound card: no output
@@ -414,12 +421,12 @@ sometimes to `/etc/kernel/cmdline`, so we add to `/etc/kernel/cmdline` only what
 ```bash
 A="pci-stub.ids=1022:15e3 efi_pstore.pstore_disable=0 amdgpu.ppfeaturemask=0xfff73fff amdgpu.dcfeaturemask=0x402"
 R=/root/atrium/rootfs
-for f in /etc/kernel/cmdline /etc/default/grub; do \cp -p $f $f.bak-$(date +%Y%m%d); done
+for f in /etc/kernel/cmdline /etc/default/grub; do [ ! -f $f ] || \cp -p $f $f.bak-$(date +%Y%m%d); done
 grubby --update-kernel=ALL --args="$A"
-for p in $A; do grep -q -- "$p" /etc/kernel/cmdline || sed -i "1s|\$| $p|" /etc/kernel/cmdline; done
+[ ! -f /etc/kernel/cmdline ] || for p in $A; do grep -q -- "$p" /etc/kernel/cmdline || sed -i "1s|\$| $p|" /etc/kernel/cmdline; done
 install -m 644 $R/etc/default/grub /etc/default/grub
 install -D -m 644 $R/etc/pipewire/pipewire.conf.d/50-atrium-rates.conf /etc/pipewire/pipewire.conf.d/50-atrium-rates.conf
-grubby --info=ALL | grep -E "^args"; cat /etc/kernel/cmdline
+grubby --info=ALL | grep -E "^args"; cat /etc/kernel/cmdline 2>/dev/null
 ```
 
 The changes touch three places:
@@ -543,7 +550,8 @@ English layout.** If you erase Cyrillic with Backspace, fragments of bytes stay 
   for a gamepad.
 - **Steam** — Linux and Windows games through Proton.
 - **Steam Link and Moonlight** — game streaming from a powerful PC. Our PC runs Apollo (a fork of
-  Sunshine), the stream is 4K 60 Hz in AV1.
+  Sunshine), the stream is 3840×2160 at 120 fps in AV1, 150 Mbit/s. Server and client setup, the network
+  and MikroTik — [streaming.md](streaming.md).
 - **steam-devices** — gamepad permissions (DualSense Edge and others) for the user at the screen.
 
 ```bash
@@ -588,7 +596,8 @@ inside do not start: the first line must be `FILE "<name>.bin" BINARY`.
 
 ## 16. Freeze trap
 
-**Why.** The box froze twice at night while the screen was off and left no traces. The trap makes sure
+**Why.** The box froze at night while the screen was off and left no traces (12.10; a similar case on
+07.10 may have had an external cause). The trap makes sure
 that next time it reboots by itself and leaves a report:
 
 - **the motherboard's hardware watchdog** (SP5100 TCO): if the kernel does not respond for 60 seconds,
@@ -597,7 +606,7 @@ that next time it reboots by itself and leaves a report:
 - **the panic report** is written to UEFI memory (pstore); after boot, systemd moves it to
   `/var/lib/systemd/pstore`. The SSH login screen shows this as a red `pstore` line;
 - **GFXOFF is off** (`amdgpu.ppfeaturemask` without bit `0x8000`). Deep sleep of the graphics core while
-  the screen is off is the first suspect. A box on mains power does not need the graphics to doze off
+  the screen is off is one of the suspects. A box on mains power does not need the graphics to doze off
   (the saving is a fraction of a watt), so we keep it off for good. The kernel parameter was added in
   step 12.
 
@@ -631,9 +640,10 @@ reboot
 ```
 
 **Display.** If the TV and the connection are the same as ours (LG C3 on the box's HDMI, `HDMI-1` in
-GNOME), the `monitors.xml` from step 9 already sets 3840×2160 at 120 Hz, 250 % scale and HDR. Otherwise, set this at
-the TV in Settings → Displays. With HDR, an HDR brightness slider appears in the quick settings menu. The
-factory neutral value is 100 %; we keep it at about 110 %. After a reboot the slider goes back to 100 %.
+GNOME), the `monitors.xml` from step 9 already sets 3840×2160 at 120 Hz, 250 % scale and SDR. Otherwise,
+set this at the TV in Settings → Displays. Do not turn HDR on by hand: mpv turns it on for HDR videos (step 9,
+"Auto HDR"). While HDR is on, the quick settings menu has an HDR brightness slider. The factory neutral
+value is 100 %; we keep it at about 110 %. Each time HDR turns on, the slider goes back to 100 %.
 
 **Check.** Everything should be green:
 
@@ -652,7 +662,7 @@ cat /sys/class/watchdog/watchdog0/state
 Expected:
 
 - no failed services;
-- `/proc/cmdline` contains our three parameters;
+- `/proc/cmdline` contains our four parameters;
 - `aplay -l` shows one DAC;
 - `/srv` is mounted;
 - more than ten VA-API profiles;

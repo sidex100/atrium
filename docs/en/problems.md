@@ -1,6 +1,6 @@
 # Known problems and fixes
 
-[Русская версия](../ru/problems.md) · [Install](install.md) · [Hardware](hardware.md) · [Updates](updates.md)
+[Русская версия](../ru/problems.md) · [Install](install.md) · [Hardware](hardware.md) · [Updates](updates.md) · [TV output](tv-output.md) · [Game streaming](streaming.md)
 
 Everything we have run into, with the cause and the fix.
 
@@ -92,7 +92,8 @@ two causes:
 
 - interpolation and `video-sync=display-resample` made mpv render 4K on every one of the 120 refreshes per
   second;
-- GNOME in HDR mode could not present every frame on time.
+- GNOME in HDR mode could not present every frame on time (back then the desktop was always in HDR; now it
+  runs in SDR, and HDR turns on only for HDR videos — installation, step 9, "Auto HDR").
 
 **Fix** (in `mpv.conf`):
 
@@ -134,6 +135,32 @@ GNOME does not accept clicks from anyone, including RDP. One more tap fixes it.
 **Cause.** The picture is shifted by 4 pixels: this is "Screen Shift" in LG's OLED Care settings.
 **Fix:** turn it off. You can check with the test wallpaper `src/wallpaper/make_edge_test.py`.
 
+## Dropped frames in Chrome on 4K HDR YouTube
+
+**What happened.** YouTube's "Stats for nerds" showed dozens of dropped frames in half a minute on an AV1 4K
+60 fps HDR video while the desktop was in HDR.
+
+**Investigation** — with the test script `src/tools/atrium-browser-bench.py`, without walking to the TV. It
+starts the browser with a debugging port (in a separate profile: Chrome 136+ does not open that port on the
+main one), plays the video full screen, after a 15-second warm-up counts dropped frames for 30 seconds and
+measures the GPU load per process. Results:
+- the GPU decodes the video (AV1 10-bit), the CPU is free;
+- the bottleneck is graphics. In HDR Chrome redraws each frame into a 16-bit format (~30 % of the GPU), and
+  GNOME re-composes the whole screen in HDR (~30 %). Half of the time the GPU is 95–100 % busy. Without HDR —
+  about 12 %;
+- Chrome flags (`WaylandOverlayDelegation`, zero-copy) do not help; Vulkan turns the hardware decoder off (30 %
+  dropped); Firefox has no HDR and drops 20 %; Chromium behaves like Chrome;
+- in normal viewing 0.1–0.5 % of frames are dropped. A batch adds up at the start: quality switch, going full
+  screen, and for a signed-in user resuming from the last position. "Stats for nerds" on top of the video
+  adds drops by itself.
+
+**Fix:** the desktop runs in SDR — YouTube in Chrome plays in SDR without drops. HDR films go to mpv, which
+turns HDR on by itself (installation, step 9, "Auto HDR").
+
+The script runs as root on the box: `python3 atrium-browser-bench.py` (all variants) or with variant names,
+for example `python3 atrium-browser-bench.py chrome-base chrome-real-auto`. It closes the TV user's browsers,
+writes results to `/tmp/atrium-browser-bench.txt` and deletes its temporary profiles at the end.
+
 ## Stutter in Steam Link and Moonlight
 
 **Cause.** The PC was connected to a 2.5 Gbit/s port, while the rest of the path to atrium ran at 1 Gbit/s.
@@ -143,6 +170,8 @@ Bursts of frames overflowed the switch queue and packets were lost: in the Steam
 - the PC was moved to a 1 Gbit/s port;
 - on the MikroTik routers the port queues were enlarged (`pfifo` of 500 packets);
 - on atrium the UDP buffer was enlarged (`90-atrium-stream.conf`).
+
+In detail, with the MikroTik commands and network recommendations — [streaming.md](streaming.md).
 
 ## Windows does not open the shared folder
 

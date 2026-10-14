@@ -18,7 +18,6 @@
           <height>2160</height>
           <rate>120.000</rate>
         </mode>
-        <colormode>bt2100</colormode>
       </monitor>
     </logicalmonitor>
   </configuration>

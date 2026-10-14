@@ -1,6 +1,6 @@
 # Обновления: что может отлететь и как вернуть
 
-[English version](../en/updates.md) · [Установка](install.md) · [Железо](hardware.md) · [Известные проблемы](problems.md)
+[English version](../en/updates.md) · [Установка](install.md) · [Железо](hardware.md) · [Известные проблемы](problems.md) · [Вывод на ТВ](tv-output.md)
 
 ## Как обновляемся
 
@@ -93,6 +93,9 @@ find /etc -name '*.rpmnew' -o -name '*.rpmsave'
     перехода на 7.4 посмотри новое значение по умолчанию (`modinfo -p amdgpu`, исходник `amd_shared.h`) и,
     скорее всего, убери параметр: наша маска может выключить новые функции, которые 7.4 включает сам. Что
     после обновления ядра идёт именно HDMI 2.1 — проверка ниже и в [tv-output.md](tv-output.md).
+11. **Авто-HDR** (`atrium-hdr`, `auto-hdr.lua`) опирается на `gdctl` и свойство `color-mode` в D-Bus
+    DisplayConfig — это GNOME. После обновления GNOME проверь от `view`: `atrium-hdr status` отвечает `sdr`,
+    а HDR-фильм в mpv включает и выключает HDR.
 
 ## Проверка после обновления
 
@@ -110,7 +113,7 @@ rpm -V urserver | grep remotes
 
 Ожидаемо:
 
-- три наших параметра ядра на месте;
+- четыре наших параметра ядра на месте;
 - нет упавших служб;
 - все расширения `ACTIVE`;
 - профили VA-API есть;

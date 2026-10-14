@@ -1,6 +1,6 @@
 # Hardware, BIOS, TV output, drives
 
-[Русская версия](../ru/hardware.md) · [Install](install.md) · [Updates](updates.md) · [Known problems](problems.md)
+[Русская версия](../ru/hardware.md) · [Install](install.md) · [Updates](updates.md) · [Known problems](problems.md) · [TV output](tv-output.md)
 
 ## Components
 

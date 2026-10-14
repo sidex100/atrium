@@ -1,0 +1,8 @@
+# 2026-10-13: software replug of the TV output after the screen wakes up (see the script).
+# Started by atrium-screensaver (user view) - allowed by /etc/polkit-1/rules.d/50-atrium-dp-replug.rules.
+[Unit]
+Description=atrium: replug the TV output (DisplayPort) after the screen wakes up
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/atrium-dp-replug

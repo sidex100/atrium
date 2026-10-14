@@ -1,0 +1,38 @@
+#!/bin/bash
+# atrium-hdr - switch the TV between SDR and HDR (GNOME color mode) and nothing else:
+# resolution, refresh rate and scale stay as they are. The change is temporary (not written to
+# monitors.xml), so after a re-login the desktop comes back as monitors.xml says (SDR on atrium).
+#   atrium-hdr on | off | status        - run as the TV user, inside its GNOME session
+# 2026-10-13: the desktop stays SDR - in HDR GNOME re-composes every frame and the GPU has no headroom
+# left for 4K HDR video; mpv (scripts/auto-hdr.lua) turns HDR on only while an HDR video plays.
+set -eu
+
+color_mode() {   # 0 = default (SDR), 1 = bt2100 (HDR), 2 = sdr-native
+    gdbus call --session --dest org.gnome.Mutter.DisplayConfig --object-path /org/gnome/Mutter/DisplayConfig \
+        --method org.gnome.Mutter.DisplayConfig.GetCurrentState |
+        grep -o "'color-mode': <uint32 [0-9]*>" | head -1 | sed 's/.* \([0-9]*\)>$/\1/'
+}
+
+case "${1:-}" in
+    status)
+        case "$(color_mode)" in 1) echo hdr ;; *) echo sdr ;; esac
+        exit 0 ;;
+    on) want=bt2100 ;;
+    off) want=default ;;
+    *) echo "usage: atrium-hdr on|off|status" >&2; exit 2 ;;
+esac
+
+# RDP connected: do not switch - mutter 50.5 crashed when the display config changed during screen sharing
+if ss -Htn state established '( sport = :3389 )' | grep -q .; then
+    echo "atrium-hdr: RDP client connected - not switching" >&2
+    exit 3
+fi
+
+# one TV, one logical monitor: take its connector, current mode and scale from gdctl
+show=$(gdctl show)
+conn=$(printf '%s\n' "$show" | sed -n 's/^.*Monitor \([^ ]*\) (.*$/\1/p' | head -1)
+mode=$(printf '%s\n' "$show" | sed -n '/Current mode/{n;s/^[^0-9]*\([0-9][0-9x@.]*\).*$/\1/p}' | head -1)
+scale=$(printf '%s\n' "$show" | sed -n 's/^.*Scale: \([0-9.]*\).*$/\1/p' | head -1)
+[ -n "$conn" ] && [ -n "$mode" ] && [ -n "$scale" ] || { echo "atrium-hdr: cannot read the display config" >&2; exit 1; }
+
+gdctl set --logical-monitor --primary --scale "$scale" --monitor "$conn" --mode "$mode" --color-mode "$want"

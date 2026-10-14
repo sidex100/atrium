@@ -1,0 +1,45 @@
+--- a/usr/local/bin/atrium-screensaver
++++ b/usr/local/bin/atrium-screensaver
+@@ -13,6 +13,8 @@
+ # any key / mouse / remote / RDP input -> mpv is closed, monitor on.
+ # Nothing happens while a player holds an idle inhibitor (film, YouTube); if the film ends
+ # more than 30 min after the last input, the monitor goes off within a minute.
++# 2026-10-13: after the monitor is back on, start atrium-dp-replug.service (root): software
++# replug of the DP output - the DP->HDMI cable chip sometimes stays "no signal" after a long blank.
+ import os
+ import random
+ import signal
+@@ -34,6 +36,7 @@
+        "--cursor-autohide=always", "--stop-screensaver=no", "--no-terminal", "--"]
+ 
+ bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
++sysbus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+ idle = Gio.DBusProxy.new_sync(bus, Gio.DBusProxyFlags.NONE, None,
+                               "org.gnome.Mutter.IdleMonitor",
+                               "/org/gnome/Mutter/IdleMonitor/Core",
+@@ -72,6 +75,17 @@
+         return False
+ 
+ 
++# 2026-10-13: allowed for this user by /etc/polkit-1/rules.d/50-atrium-dp-replug.rules
++def replug_output():
++    try:
++        sysbus.call_sync("org.freedesktop.systemd1", "/org/freedesktop/systemd1",
++                         "org.freedesktop.systemd1.Manager", "StartUnit",
++                         GLib.Variant("(ss)", ("atrium-dp-replug.service", "replace")),
++                         None, Gio.DBusCallFlags.NONE, 5000, None)
++    except GLib.Error as e:
++        print(f"atrium-dp-replug start failed: {e.message}", file=sys.stderr, flush=True)
++
++
+ def watch_activity():
+     global active_watch
+     if active_watch is None:
+@@ -138,6 +152,7 @@
+     if monitor_off:
+         set_power(POWER_ON)
+         monitor_off = False
++        replug_output()
+ 
+ 
+ def on_signal(proxy, sender, name, params):

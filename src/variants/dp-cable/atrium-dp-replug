@@ -1,0 +1,33 @@
+#!/bin/bash
+# atrium-dp-replug - software "unplug and plug back" of the TV output (DisplayPort) after the
+# screen wakes up from the blank.
+# 2026-10-13: the DP -> HDMI 2.1 cable chip (Chrontel CH7218) sometimes does not bring the HDMI
+# side back after a long blank: the box sends the picture, the DP link is up, the TV says
+# "no signal". A physical replug of the cable fixes it. This is the software version: amdgpu
+# debugfs trigger_hotplug - the driver drops and re-detects the link, GNOME re-applies the mode
+# (one blink on the TV). The chip power (3.3 V from the DP port) cannot be switched from software.
+# Started as root by atrium-dp-replug.service; the TV user starts it from atrium-screensaver
+# after the monitor is back on (polkit rule 50-atrium-dp-replug.rules).
+# Variant, not in use: only for the active DP -> HDMI 2.1 cable path (see README.md here).
+set -u
+
+# RDP connected: skip - mutter 50.5 crashes when a monitor goes away during screen sharing
+if ss -Htn state established '( sport = :3389 )' | grep -q .; then
+    echo "RDP client connected - skipped"
+    exit 0
+fi
+
+sleep 3    # let the wake-up modeset finish
+for st in /sys/class/drm/card*-DP-*/status; do
+    [ "$(cat "$st")" = connected ] || continue
+    base=$(basename "$(dirname "$st")")    # card1-DP-1
+    card=${base%%-*}
+    conn=${base#*-}
+    pci=$(basename "$(readlink -f "/sys/class/drm/$card/device")")
+    t=/sys/kernel/debug/dri/$pci/$conn/trigger_hotplug
+    [ -w "$t" ] || { echo "$t: not found"; continue; }
+    echo 0 > "$t"
+    sleep 3
+    echo 1 > "$t"
+    echo "$conn replugged"
+done

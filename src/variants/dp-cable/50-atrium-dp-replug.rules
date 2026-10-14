@@ -1,0 +1,10 @@
+// 2026-10-13: the TV user (view) may start atrium-dp-replug.service - atrium-screensaver
+// starts it after the monitor is back on. Only this unit, only "start".
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "atrium-dp-replug.service" &&
+        action.lookup("verb") == "start" &&
+        subject.user == "view") {
+        return polkit.Result.YES;
+    }
+});

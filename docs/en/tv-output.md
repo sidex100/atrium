@@ -1,6 +1,6 @@
 # TV output: 4K 120 Hz and HDR over HDMI 2.1 — a month of searching and where the truth was
 
-[Русская версия](../ru/tv-output.md) · [Install](install.md) · [Hardware](hardware.md) · [Known problems](problems.md)
+[Русская версия](../ru/tv-output.md) · [Install](install.md) · [Hardware](hardware.md) · [Updates](updates.md) · [Known problems](problems.md)
 
 ## In short
 
@@ -61,7 +61,10 @@ The `Link` field shows `Training` even with a working picture — that is normal
 (`HPO` is not in use), the signal goes over the old HDMI 2.0. The address `0000:05:00.0` is the graphics
 card of our box; on other hardware, look at `ls /sys/kernel/debug/dri/`.
 
-In GNOME: "Settings → Displays" → 3840×2160, 120 Hz, HDR. On the TV, **HDMI Ultra HD Deep Colour** must be
+In GNOME: "Settings → Displays" → 3840×2160, 120 Hz. Do not turn HDR on by hand: the desktop runs in SDR,
+and HDR turns on by itself while mpv plays an HDR video (installation, step 9, "Auto HDR"). The reason is
+load: in HDR GNOME re-composes every frame, and the GPU has no headroom left for 4K HDR in the browser. On
+the TV, **HDMI Ultra HD Deep Colour** must be
 on for this input. The cable must be a certified **Ultra High Speed (48G)** one: simpler cables do not
 hold 4K 120 Hz.
 
@@ -87,7 +90,7 @@ hold 4K 120 Hz.
 
 **Lost:**
 - **CEC.** CEC came from the chip in the cable, passed over the DisplayPort service channel. The box's own
-  HDMI has no CEC device in Linux (`/dev/cec*` disappears). The TV is not turned on by atrium over CEC; if
+  HDMI has no CEC device in Linux (`/dev/cec*` disappears). atrium does not turn the TV on over CEC; if
   waking the TV from atrium is ever needed — over the network (Wake-on-LAN and the webOS network control). A
   USB CEC dongle (Pulse-Eight) sits inline in the HDMI cable and most likely will not pass HDMI 2.1.
 
@@ -112,7 +115,10 @@ remains. What we learned about them:
 
 UGREEN builds its own DP134/DP135 cables on the same chip. UGREEN's instructions for the DP134 (85564) and
 DP135 (85596) point to a "CH7218 Firmware Update Tool" archive: the Chrontel Chip FW Update Tool V03.03.02
-utility for Windows and the file `CH7218A-IMG.G000.07.00.54`.
+utility for Windows and the file `CH7218A-IMG.G000.07.00.54`. The instructions are a UGREEN PDF dated 17.04.2026 (on
+Amazon's image server, in the DP134/DP135 listing); the archive is on MediaFire as
+`85564&85996-CH7218+Firmware+Update+Tool.zip.rar`. Download and check files from a file host yourself: no
+firmware or tools are stored in this repository.
 
 1. Connect the cable to the DisplayPort output of any Windows PC, with a powered-on TV at the other end.
    We used a PC with an RTX 4090: the utility works through NVIDIA.
@@ -127,9 +133,41 @@ utility for Windows and the file `CH7218A-IMG.G000.07.00.54`.
 **Risk:** the utility does not back up the factory firmware, so there is no way to restore 05.03.75. The
 procedure poses no risk to the graphics card: the write goes over the AUX service channel.
 
+What else we saw: the factory 05.03.75 gave a black screen after the TV was turned off and did not pass CEC;
+with 07.00.54 CEC appeared (`/dev/cec0`), waking after a short blank worked, after a night — not always.
+
+### Software replug and CEC through the cable
+
+For the active cable path, `src/variants/dp-cable/` keeps what we installed:
+- a software DP unplug/replug right after the screen wakes up (script, service, polkit rule, a patch for the
+  screensaver);
+- CEC commands for the cable: TV on and off, the device list.
+
+Description and install — `src/variants/dp-cable/README.md`.
+
+### Flashing the Synaptics VMM7100 adapter (Cable Matters)
+
+We **did not** flash it: we removed the Vention VMM7100 adapter earlier (flicker, heat). If you have such an
+adapter with the same trouble, here is what we found:
+
+- Cable Matters builds its 102101, 102103, 101101 and 101109 adapters on the same chip and publishes the
+  firmware in its knowledge base: article EntryID=185, archive
+  `https://kb.cablematters.com/index.php?View=afile&EntryID=185&AttachID=103`.
+- The archive holds the `VMMDPTool64.exe` utility (Windows, run as administrator) and two firmware files:
+  `Spyder_fw_DP_CM_7.02.126.fullrom` — the normal one, and `…7.02.120.fullrom` — with VRR (Cable Matters says
+  it may flicker).
+- Order: the adapter in the PC's DisplayPort, a powered-on screen on its HDMI side → the version on the Debug
+  tab → FLASH → LOAD to FLASH → the firmware file → wait for "Action complete" → replug the adapter.
+- On an adapter of another brand the utility will most likely say "Product ID did not match". According to
+  the Cable Matters article, answering "Yes" flashes it past the brand check. One user reported that the
+  utility did not see a non-Cable Matters adapter at all.
+- Flash only if the current version is below 7.02.126. Linux does not show the build in DPCD; VMMDPTool shows
+  it on the Debug tab.
+- There is also an unofficial 7.02.130 (DP → HDMI, discussed on Intel Community); we could not download it.
+
 ## Sources
 
-- [Hardware Busters — FRL in Linux 7.2 is off, enabled with a parameter](https://hwbusters.com/news/amds-hdmi-2-1-frl-goes-default-on-in-linux-and-the-boot-flag-retires-with-it/)
+- [Hardware Busters — FRL: off in Linux 7.2 and enabled with a parameter, on by default later](https://hwbusters.com/news/amds-hdmi-2-1-frl-goes-default-on-in-linux-and-the-boot-flag-retires-with-it/)
 - [Phoronix — FRL on by default in 7.4 together with VRR and ALLM](https://www.phoronix.com/news/Linux-7.4-AMDGPU-HDMI-2.1-Go)
 - [Phoronix — FRL initially disabled by default](https://www.phoronix.com/news/AMDGPU-FRL-Disabled-By-Default)
 - [amd_shared.h in kernel v7.2 (DC_FRL_MASK = 0x400)](https://github.com/torvalds/linux/blob/v7.2/drivers/gpu/drm/amd/include/amd_shared.h)
