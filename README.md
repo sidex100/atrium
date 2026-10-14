@@ -91,8 +91,8 @@ Hardware decoding: H.264, HEVC (incl. 10-bit), VP9 and AV1.
   third-party apps with limits.
 - **Mac mini.** A Mac is a computer, not a TV player. It is faster, quieter and more frugal, and it has
   native HDMI 2.1. But:
-  - 24 GB and 1 TB cost about $1200, and the memory and storage are soldered for good. Here a second M.2
-    slot took 2 TB for $130;
+  - the M6 with 24 GB and 1 TB costs $1,599 at the Apple Store, and the memory and storage are soldered for
+    good. Here a second M.2 slot took 2 TB for about $300;
   - on macOS only some players switch the DAC rate per track;
   - Steam on Linux runs noticeably more games through Proton than on macOS.
 - **A Windows mini PC.**
@@ -108,7 +108,10 @@ Hardware decoding: H.264, HEVC (incl. 10-bit), VP9 and AV1.
 
 | Box | 2 TB SSD | 48G HDMI cable | DAC | Total without the TV |
 |---|---|---|---|---|
-| ~350 | ~130 | ~15 | 150–250 | **≈ 650–750** |
+| ~500 | ~300 | ~15 | 150–250 | **≈ 970–1070** |
+
+US prices, October 2026: the box from the Amazon listing above, the SSD (WD Blue SN5000 2 TB) on Amazon.
+They change over time: in 2025 the same SSD cost $100–180.
 
 ## Documentation
 
@@ -241,8 +244,8 @@ What is **not** here:
   ограничениями.
 - **Mac mini.** Mac — это компьютер, а не плеер для ТВ. Он быстрее, тише и экономнее, и HDMI 2.1 у него
   свой. Но:
-  - конфигурация с 24 ГБ и 1 ТБ стоит около $1200, а память и диск распаяны навсегда. Здесь второй слот
-    M.2: 2 ТБ добавили за $130;
+  - M6 с 24 ГБ и 1 ТБ стоит $1599 в Apple Store, а память и диск распаяны навсегда. Здесь второй слот
+    M.2: 2 ТБ добавили примерно за $300;
   - частоту ЦАПа под трек на macOS переключают только отдельные плееры;
   - игр в Steam под Linux через Proton заметно больше, чем под macOS.
 - **Мини-ПК на Windows.**
@@ -258,7 +261,10 @@ What is **not** here:
 
 | Бокс | SSD 2 ТБ | Кабель HDMI 48G | ЦАП | Итого без ТВ |
 |---|---|---|---|---|
-| ~350 | ~130 | ~15 | 150–250 | **≈ 650–750** |
+| ~500 | ~300 | ~15 | 150–250 | **≈ 970–1070** |
+
+Цены в США, октябрь 2026: бокс — по объявлению на Amazon (ссылка в начале страницы), SSD (WD Blue SN5000
+2 ТБ) — на Amazon. Цены меняются: в 2025 году этот же SSD стоил $100–180.
 
 ## Документация
 
