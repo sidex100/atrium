@@ -1,6 +1,6 @@
 # Known problems and fixes
 
-[Русская версия](../ru/problems.md) · [Install](install.md) · [Hardware](hardware.md) · [Updates](updates.md) · [TV output](tv-output.md) · [Game streaming](streaming.md)
+[Русская версия](../ru/problems.md) · [Install](install.md) · [Hardware](hardware.md) · [Updates](updates.md) · [TV output](tv-output.md) · [Game streaming](streaming.md) · [Browser tests](browser-tests.md)
 
 Everything we have run into, with the cause and the fix.
 
@@ -166,9 +166,7 @@ measures the GPU load per process. Results:
 **Fix:** the desktop runs in SDR — YouTube in Chrome plays in SDR without drops. HDR films go to mpv, which
 turns HDR on by itself (installation, step 9, "Auto HDR").
 
-The script runs as root on the box: `python3 atrium-browser-bench.py` (all variants) or with variant names,
-for example `python3 atrium-browser-bench.py chrome-base chrome-real-auto`. It closes the TV user's browsers,
-writes results to `/tmp/atrium-browser-bench.txt` and deletes its temporary profiles at the end.
+The method, how to run the script and every measurement are on the [Browser tests](browser-tests.md) page.
 
 ## Dropped frames in Firefox
 
@@ -187,7 +185,7 @@ H.264. The GPU was 7–20 % busy meanwhile.
 **Fix:** in the Firefox policy (`/etc/firefox/policies/policies.json`, install step 9)
 `widget.wayland.vsync.enabled = false` and `layout.frame_rate = 120`: Firefox draws on its own 120 Hz
 timer. The same video full screen — 1 dropped of 1810 (was 258), the page gets a steady 119–120 frames a
-second. With another refresh rate, put that number instead of 120.
+second. With another refresh rate, put that number instead of 120. Every measurement — [Browser tests](browser-tests.md).
 
 ## Stutter in Steam Link and Moonlight
 

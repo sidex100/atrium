@@ -123,6 +123,7 @@ They change over time: in 2025 the same SSD cost $100–180.
 | Game streaming: Apollo, Moonlight, Steam Link, the network | [docs/en/streaming.md](docs/en/streaming.md) | [docs/ru/streaming.md](docs/ru/streaming.md) |
 | Updates: what breaks and how to get it back | [docs/en/updates.md](docs/en/updates.md) | [docs/ru/updates.md](docs/ru/updates.md) |
 | Known problems and fixes | [docs/en/problems.md](docs/en/problems.md) | [docs/ru/problems.md](docs/ru/problems.md) |
+| Browser tests: how we measure video smoothness, every result | [docs/en/browser-tests.md](docs/en/browser-tests.md) | [docs/ru/browser-tests.md](docs/ru/browser-tests.md) |
 
 ## What is where
 
@@ -276,6 +277,7 @@ What is **not** here:
 | Стрим игр: Apollo, Moonlight, Steam Link, сеть | [docs/ru/streaming.md](docs/ru/streaming.md) | [docs/en/streaming.md](docs/en/streaming.md) |
 | Обновления: что отлетает и как вернуть | [docs/ru/updates.md](docs/ru/updates.md) | [docs/en/updates.md](docs/en/updates.md) |
 | Известные проблемы и решения | [docs/ru/problems.md](docs/ru/problems.md) | [docs/en/problems.md](docs/en/problems.md) |
+| Тесты браузеров: как меряем плавность видео, все результаты | [docs/ru/browser-tests.md](docs/ru/browser-tests.md) | [docs/en/browser-tests.md](docs/en/browser-tests.md) |
 
 ## Что где лежит
 

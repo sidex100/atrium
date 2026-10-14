@@ -1,6 +1,6 @@
 # Известные проблемы и решения
 
-[English version](../en/problems.md) · [Установка](install.md) · [Железо](hardware.md) · [Обновления](updates.md) · [Вывод на ТВ](tv-output.md) · [Стрим игр](streaming.md)
+[English version](../en/problems.md) · [Установка](install.md) · [Железо](hardware.md) · [Обновления](updates.md) · [Вывод на ТВ](tv-output.md) · [Стрим игр](streaming.md) · [Тесты браузеров](browser-tests.md)
 
 Всё, на что мы наступали, с причиной и решением.
 
@@ -160,9 +160,7 @@ runuser -u view -- env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus gdb
 **Решение:** рабочий стол в SDR — YouTube в Chrome идёт в SDR и без пропусков. HDR-фильмы — в mpv, HDR
 включается сам (установка, шаг 9, «Авто-HDR»).
 
-Скрипт запускается от root на боксе: `python3 atrium-browser-bench.py` (все варианты) или с именами
-вариантов, например `python3 atrium-browser-bench.py chrome-base chrome-real-auto`. Он закрывает браузеры
-пользователя ТВ, результаты пишет в `/tmp/atrium-browser-bench.txt`, свои временные профили в конце удаляет.
+Методика, как запускать скрипт, и все замеры — на странице [Тесты браузеров](browser-tests.md).
 
 ## Пропуски кадров в Firefox
 
@@ -181,7 +179,7 @@ runuser -u view -- env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus gdb
 **Решение:** в политике Firefox (`/etc/firefox/policies/policies.json`, установка, шаг 9)
 `widget.wayland.vsync.enabled = false` и `layout.frame_rate = 120`: Firefox рисует по своему таймеру
 120 Гц. Тот же ролик на весь экран — 1 пропуск из 1810 (было 258), страница — ровно 119–120 кадров в секунду.
-При другой частоте экрана поменяй 120 на неё.
+При другой частоте экрана поменяй 120 на неё. Все замеры — [Тесты браузеров](browser-tests.md).
 
 ## Рывки в Steam Link и Moonlight
 
