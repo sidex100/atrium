@@ -124,6 +124,16 @@ runuser -u view -- env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus gdb
 пикселях. **Решение:** `video_fullscreen_x = "1536"` и `video_fullscreen_y = "864"` в `retroarch.cfg`
 (установка, шаг 15).
 
+## Spotify: синяя рамка окна в стиле Windows 9x
+
+**Причина.** Spotify — это Chromium внутри, и новые версии идут в GNOME прямо через Wayland. GNOME
+не рисует рамки приложениям на Wayland, их рисует само приложение, а Spotify не умеет рисовать рамку в
+стиле GTK. Получается стандартная рамка Chromium. **Решение:** запускать Spotify через Xwayland, тогда
+рамку рисует GNOME (установка, шаг 8). Откат:
+`runuser -u view -- flatpak override --user --reset com.spotify.Client` и удалить
+`~/.var/app/com.spotify.Client/config/spotify-flags.conf` пользователя ТВ. Когда Spotify научится рисовать
+рамку в стиле GTK, можно вернуться на Wayland.
+
 ## ТВ обрезает картинку слева
 
 **Причина.** Картинка сдвинута на 4 пикселя: это «Сдвиг экрана» в настройках ухода за OLED у LG.
@@ -143,7 +153,7 @@ runuser -u view -- env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus gdb
   заново собирает весь экран в HDR (~30 %). Половину времени видеокарта загружена на 95–100 %. Без HDR —
   около 12 %;
 - флаги Chrome (`WaylandOverlayDelegation`, zero-copy) не помогают; Vulkan отключает аппаратный декодер (30 %
-  пропусков); Firefox HDR не умеет и теряет 20 % кадров; Chromium ведёт себя как Chrome;
+  пропусков); Firefox HDR не умеет, а его пропуски — отдельная история (ниже); Chromium ведёт себя как Chrome;
 - в обычном просмотре пропусков 0,1–0,5 %. Пачка набегает на старте: смена качества, переход на весь экран,
   у залогиненного — продолжение с места. «Статистика» поверх видео сама добавляет пропуски.
 
@@ -153,6 +163,25 @@ runuser -u view -- env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus gdb
 Скрипт запускается от root на боксе: `python3 atrium-browser-bench.py` (все варианты) или с именами
 вариантов, например `python3 atrium-browser-bench.py chrome-base chrome-real-auto`. Он закрывает браузеры
 пользователя ТВ, результаты пишет в `/tmp/atrium-browser-bench.txt`, свои временные профили в конце удаляет.
+
+## Пропуски кадров в Firefox
+
+**Что было.** Firefox терял 14–18 % кадров на YouTube 4K60, на любом кодеке и даже на 1080p H.264. Видеокарта
+при этом загружена на 7–20 %.
+
+**Где была правда** (тем же скриптом `src/tools/atrium-browser-bench.py`, варианты `firefox-*`):
+- не кодеки. Декодирует видеокарта через VA-API, кадр 4K — за 0,45 мс (журнал `MOZ_LOG`). Системный ffmpeg
+  вместо встроенного ffvpx ничего не меняет;
+- не AV1. Firefox сообщает, что AV1 4K60 тянет плавно, но YouTube отдаёт ему 4K только в VP9; без VP9 —
+  H.264 1080p. Расширения вроде enhanced-h264ify поэтому не помогают;
+- не WebRender. Он и так рисует на видеокарте: программный вариант съедает 3 ядра и теряет 87 %;
+- **синхронизация с экраном.** Firefox рисует по кадрам, которые ему присылает GNOME на Wayland, и эти
+  кадры приходят неровно: страница получает 86–91 кадр в секунду вместо 120, с десятками рывков.
+
+**Решение:** в политике Firefox (`/etc/firefox/policies/policies.json`, установка, шаг 9)
+`widget.wayland.vsync.enabled = false` и `layout.frame_rate = 120`: Firefox рисует по своему таймеру
+120 Гц. Тот же ролик на весь экран — 1 пропуск из 1810 (было 258), страница — ровно 119–120 кадров в секунду.
+При другой частоте экрана поменяй 120 на неё.
 
 ## Рывки в Steam Link и Moonlight
 

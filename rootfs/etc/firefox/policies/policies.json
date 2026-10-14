@@ -2,7 +2,9 @@
   "policies": {
     "Preferences": {
       "browser.startup.homepage": { "Value": "about:home", "Status": "default" },
-      "browser.newtabpage.pinned": { "Value": "[]", "Status": "default" }
+      "browser.newtabpage.pinned": { "Value": "[]", "Status": "default" },
+      "widget.wayland.vsync.enabled": { "Value": false, "Status": "default" },
+      "layout.frame_rate": { "Value": 120, "Status": "default" }
     }
   }
 }

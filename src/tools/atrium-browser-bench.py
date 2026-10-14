@@ -3,6 +3,7 @@
 # flags, measured from the box itself (nobody has to look at the TV). Run as root on atrium.
 #   python3 atrium-browser-bench.py                 # all variants
 #   python3 atrium-browser-bench.py chrome-base firefox-base
+#   python3 atrium-browser-bench.py firefox     # every variant whose name starts with "firefox"
 # Each variant: close the browsers of user view, start one in view's session with a throwaway profile and
 # a local-only debugging port (127.0.0.1), play the video full screen in 4K, warm up, then measure:
 # dropped / total frames (from the page), GPU time of the browser and of gnome-shell (DRM fdinfo),
@@ -42,6 +43,38 @@ VARIANTS = [
     ("chrome-real-auto", "chrome-real", [], "auto"),
     ("chrome-real-auto-stats", "chrome-real", [], "auto", True),
     ("chrome-real-noext", "chrome-real", ["--disable-extensions"], "auto"),
+    # 2026-10-14: Firefox - for "firefox" the third field is extra user.js lines (prefs) instead of flags.
+    #   av1: no VP9 for media source -> YouTube serves AV1 (hardware AV1 decode on the Radeon 680M)
+    #   sysffmpeg: VP8/VP9/AV1 through the system ffmpeg (RPM Fusion) instead of the bundled ffvpx
+    #   hwforce: hardware decoding on, whatever the blocklist says
+    #   nolayer: without the WebRender layer compositor that Fedora turns on
+    ("firefox-av1", "firefox", ['user_pref("media.mediasource.vp9.enabled", false);']),
+    ("firefox-sysffmpeg", "firefox", ['user_pref("media.ffvpx.enabled", false);']),
+    ("firefox-av1-sysffmpeg", "firefox", ['user_pref("media.mediasource.vp9.enabled", false);',
+                                          'user_pref("media.ffvpx.enabled", false);']),
+    ("firefox-hwforce", "firefox", ['user_pref("media.hardware-video-decoding.force-enabled", true);',
+                                    'user_pref("media.ffmpeg.vaapi.enabled", true);']),
+    ("firefox-nolayer", "firefox", ['user_pref("gfx.webrender.layer-compositor", false);']),
+    # 2026-10-14: decoding is not the problem (VA-API, 0.45 ms a frame) - is WebRender drawing on the GPU?
+    ("firefox-hwwr", "firefox", ['user_pref("gfx.webrender.all", true);',
+                                 'user_pref("gfx.webrender.software", false);']),
+    ("firefox-swwr", "firefox", ['user_pref("gfx.webrender.software", true);']),
+    # 2026-10-14: WebRender is on the GPU already, frames are lost when they are handed to GNOME - the frame clock:
+    #   fr120: refresh fixed at 120; timer120: no Wayland frame callbacks, a 120 Hz timer instead;
+    #   nofrac: without Wayland fractional scaling (the screen is at 250 %)
+    ("firefox-hwwr-fr120", "firefox", ['user_pref("gfx.webrender.all", true);',
+                                       'user_pref("gfx.webrender.software", false);',
+                                       'user_pref("layout.frame_rate", 120);']),
+    ("firefox-hwwr-timer120", "firefox", ['user_pref("gfx.webrender.all", true);',
+                                          'user_pref("gfx.webrender.software", false);',
+                                          'user_pref("widget.wayland.vsync.enabled", false);',
+                                          'user_pref("layout.frame_rate", 120);']),
+    # 2026-10-14: timer120 above gave 0.1 % - the same without forcing WebRender (only the frame clock changed)
+    ("firefox-timer120", "firefox", ['user_pref("widget.wayland.vsync.enabled", false);',
+                                     'user_pref("layout.frame_rate", 120);']),
+    ("firefox-hwwr-nofrac", "firefox", ['user_pref("gfx.webrender.all", true);',
+                                        'user_pref("gfx.webrender.software", false);',
+                                        'user_pref("widget.wayland.fractional-scale.enabled", false);']),
 ]
 
 STATE_JS = r"""(() => { const v = document.querySelector('video'); const p = document.getElementById('movie_player');
@@ -286,6 +319,45 @@ def gpu_ns(pidlist):
     return res
 
 
+def cpu_ticks(pidlist):
+    """pid -> (CPU ticks, process kind): Firefox -contentproc <kind> / Chrome --type=<kind>, else main."""
+    res = {}
+    for p in pidlist:
+        try:
+            stat = open(f"/proc/{p}/stat").read().rsplit(")", 1)[1].split()
+            args = open(f"/proc/{p}/cmdline").read().split("\0")
+        except OSError:
+            continue
+        args = [a for a in args if a]
+        kind = "main"
+        if "-contentproc" in args and args:
+            kind = args[-1]
+        for a in args:
+            if a.startswith("--type="):
+                kind = a[len("--type="):]
+        res[p] = (int(stat[11]) + int(stat[12]), kind)   # utime + stime
+    return res
+
+
+def cpu_line(a, b, secs):
+    # 2026-10-14: CPU of the browser by process kind, % of one core
+    tck, per = os.sysconf("SC_CLK_TCK"), {}
+    for p, (t, kind) in b.items():
+        if p in a:
+            per[kind] = per.get(kind, 0) + (t - a[p][0])
+    return " ".join(f"{k} {100.0 * v / (secs * tck):.0f}%" for k, v in sorted(per.items(), key=lambda x: -x[1]) if v)
+
+
+# 2026-10-14: how often the page gets a frame (requestAnimationFrame follows the display refresh the browser
+# sees: ~120 here); max gap and gaps longer than 20 ms show stalls in the browser's own drawing
+RAF_JS = r"""new Promise(res => { const t = []; const f = (ts) => { t.push(ts);
+ if (ts - t[0] < 3000) { requestAnimationFrame(f); return; }
+ const d = []; for (let i = 1; i < t.length; i++) d.push(t[i] - t[i - 1]);
+ res('raf ' + ((t.length - 1) * 1000 / (t[t.length - 1] - t[0])).toFixed(0) + '/s max ' +
+     Math.max(...d).toFixed(0) + 'ms >20ms ' + d.filter(x => x > 20).length); };
+ requestAnimationFrame(f); })"""
+
+
 def delta_pct(a, b, secs):
     g = sum(b[p][0] - a[p][0] for p in b if p in a)
     v = sum(b[p][1] - a[p][1] for p in b if p in a)
@@ -313,6 +385,15 @@ def screen_owner():
 
 def launch(name, browser, flags, idx):
     prof = f"{PROFILES}/{browser}"
+    env = []
+    if browser == "firefox":
+        # 2026-10-14: a fresh profile per variant - Firefox keeps in the profile how smoothly each codec played
+        # and tells YouTube (MediaCapabilities), so one variant must not inherit another's history
+        prof = f"{PROFILES}/{name}"
+        subprocess.run(["rm", "-rf", prof], check=True)
+        # decoder log: which decoder Firefox takes (VA-API or software) and why
+        env = ["--setenv=MOZ_LOG=rotate:20,PlatformDecoderModule:5,FFmpegVideo:4",
+               f"--setenv=MOZ_LOG_FILE={PROFILES}/{name}-moz"]
     subprocess.run(["runuser", "-u", VIEW, "--", "mkdir", "-p", prof], check=True)
     if browser == "chrome-real":
         subprocess.run(["runuser", "-u", VIEW, "--", "rsync", "-a", "--delete", "--exclude=Cache",
@@ -321,7 +402,7 @@ def launch(name, browser, flags, idx):
                         "/home/view/.config/google-chrome/", prof + "/"], check=True)
     if browser == "firefox":
         subprocess.run(["runuser", "-u", VIEW, "--", "sh", "-c", f"cat > '{prof}/user.js'"],
-                       input=FIREFOX_PREFS, text=True, check=True)
+                       input=FIREFOX_PREFS + "".join(x + "\n" for x in flags), text=True, check=True)
         cmd = ["/usr/bin/firefox", "--new-instance", "--profile", prof,
                "--remote-debugging-port", str(PORT), URL]
     else:
@@ -331,7 +412,7 @@ def launch(name, browser, flags, idx):
                "--no-default-browser-check"] + store + [
                "--autoplay-policy=no-user-gesture-required", "--disable-session-crashed-bubble"] + flags + [URL]
     unit = f"atrium-bench-{idx}-{int(time.time())}"
-    subprocess.run(["systemd-run", "--user", "-M", f"{VIEW}@", "--collect", "--quiet", f"--unit={unit}"] + cmd,
+    subprocess.run(["systemd-run", "--user", "-M", f"{VIEW}@", "--collect", "--quiet", f"--unit={unit}"] + env + cmd,
                    check=True)
     return unit
 
@@ -354,6 +435,24 @@ def dump_pages(name):
             open(path, "w").write(r["result"].get("value") or "")
         except Exception as e:
             open(path, "w").write(f"ERROR {e}\n")
+
+
+# 2026-10-14: what the browser tells YouTube about 4K60 (the same questions YouTube asks before it picks a
+# format): MediaSource.isTypeSupported -> "ms", MediaCapabilities -> s(upported) m (smooth) e (power efficient).
+# (about:support cannot be opened over the debugging port - Firefox refuses the navigation.)
+CAPS_JS = r"""(async () => { const out = [];
+ for (const [n, c] of [['vp9', 'video/webm; codecs="vp09.00.51.08"'], ['av1', 'video/mp4; codecs="av01.0.12M.08"'],
+                       ['av1-10', 'video/mp4; codecs="av01.0.13M.10"'], ['h264', 'video/mp4; codecs="avc1.640033"']]) {
+  const ms = window.MediaSource ? MediaSource.isTypeSupported(c) : false; let d = {};
+  try { d = await navigator.mediaCapabilities.decodingInfo({type: 'media-source', video: {contentType: c,
+          width: 3840, height: 2160, bitrate: 20000000, framerate: 60}}); } catch (e) {}
+  out.push(n + ':' + (ms ? 'ms' : '--') + '/' + (d.supported ? 's' : '-') + (d.smooth ? 'm' : '-') + (d.powerEfficient ? 'e' : '-')); }
+ return out.join(' '); })()"""
+
+
+def save_firefox_log(name):
+    subprocess.run(["sh", "-c", f"mkdir -p /tmp/atrium-bench-mozlog && cp {PROFILES}/{name}-moz* /tmp/atrium-bench-mozlog/ "
+                    "2>/dev/null; true"])
 
 
 def state(page):
@@ -387,6 +486,10 @@ def run(name, browser, flags, idx, level=None, stats=False):
         time.sleep(2)
     else:
         raise RuntimeError(f"video did not start (last state: {st})")
+    try:
+        caps = page.eval(CAPS_JS)
+    except Exception as e:
+        caps = f"? {e}"[:60]
     page.eval(START_JS)
     time.sleep(3)
     for _ in range(3):
@@ -401,6 +504,7 @@ def run(name, browser, flags, idx, level=None, stats=False):
     s0 = state(page)
     bpids, spids = pids(DIRS[browser]), pids(comm="gnome-shell")
     a_b, a_s = gpu_ns(bpids), gpu_ns(spids)
+    c_b, c_s = cpu_ticks(bpids), cpu_ticks(spids)
     t0, busy, owner = time.time(), [], "?"
     while time.time() - t0 < MEAS:
         try:
@@ -412,8 +516,16 @@ def run(name, browser, flags, idx, level=None, stats=False):
         time.sleep(0.2)
     secs = time.time() - t0
     s1 = state(page)
+    cpu_b = cpu_line(c_b, cpu_ticks(pids(DIRS[browser])), secs)
+    cpu_s = cpu_line(c_s, cpu_ticks(pids(comm="gnome-shell")), secs)
+    try:
+        raf = page.eval(RAF_JS)
+    except Exception as e:
+        raf = f"raf ? {e}"[:40]
     if browser != "firefox":
         dump_pages(name)
+    else:
+        save_firefox_log(name)
     b_b, b_s = gpu_ns(pids(DIRS[browser])), gpu_ns(pids(comm="gnome-shell"))
     bg, bv = delta_pct(a_b, b_b, secs)
     sg, _ = delta_pct(a_s, b_s, secs)
@@ -427,14 +539,15 @@ def run(name, browser, flags, idx, level=None, stats=False):
     return (f"{name:24} {acct} | start {s0['dropped']}/{s0['total']} | {s1['w']}x{s1['h']} {s1['codecs'][:14]:14} hdr={'y' if s1['hdr'] else 'n'} "
             f"fs={'y' if s1['fs'] else 'n'} | dropped {dropped}/{frames} "
             f"({100.0 * dropped / frames if frames > 0 else 0:.1f}%) | gpu busy avg {avg:.0f}% "
-            f">=95% {hi:.0f}% | browser gfx {bg:.0f}% vcn {bv:.0f}% | shell gfx {sg:.0f}% | screen {owner}")
+            f">=95% {hi:.0f}% | browser gfx {bg:.0f}% vcn {bv:.0f}% | shell gfx {sg:.0f}% | screen {owner} "
+            f"| caps {caps} | cpu {cpu_b} | shell cpu {cpu_s} | {raf}")
 
 
 def main():
     if os.geteuid() != 0:
         sys.exit("run as root")
     want = sys.argv[1:]
-    todo = [v for v in VARIANTS if not want or v[0] in want]
+    todo = [v for v in VARIANTS if not want or v[0] in want or any(v[0].startswith(w + "-") for w in want)]
     level = open(f"{CARD}/power_dpm_force_performance_level").read().strip()
     with open(OUT, "a") as f:
         f.write(f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S %Z')} gpu level={level} video={URL}\n")

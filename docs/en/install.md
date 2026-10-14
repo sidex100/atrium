@@ -241,11 +241,37 @@ flatpak install -y --noninteractive flathub com.spotify.Client
 The Google key must have the fingerprint `EB4C 1BFD 4F04 2F6D DDCC EC91 7721 F63B D38B 4796`. You can
 check it with `rpm -qi gpg-pubkey-d38b4796`.
 
+**Spotify through Xwayland.** Under Wayland on GNOME, Spotify draws its own Windows 9x style window frame
+(more in "Known problems"). Through Xwayland, GNOME draws the frame, like for every other window. The
+files are the same as in `rootfs/home/view/.local/share/flatpak/overrides/` and
+`rootfs/home/view/.var/app/com.spotify.Client/config/`:
+
+```bash
+runuser -u view -- flatpak override --user --unset-env=WAYLAND_DISPLAY --nosocket=wayland --nosocket=fallback-x11 --socket=x11 com.spotify.Client
+runuser -u view -- sh -c 'mkdir -p /home/view/.var/app/com.spotify.Client/config && printf "%s\n" "--ozone-platform=x11" > /home/view/.var/app/com.spotify.Client/config/spotify-flags.conf'
+```
+
+**Chrome and Chromium in Russian** (optional; the system and GNOME stay in English; put your own language
+code instead of `ru`). Chrome on Linux has no UI language choice in its settings: the language comes from
+the environment (`LANGUAGE`, `LC_*`, `LANG`). The TV user gets copies of the system launchers with
+`env LANGUAGE=ru` in the launch lines. A launcher with the same name in `~/.local/share/applications`
+wins over the system one, so the dock and opening links both use it. The copies are made from the system
+files (Google's and Fedora's files are not put into the repository). Each command must print `3`:
+
+```bash
+A=/home/view/.local/share/applications; runuser -u view -- mkdir -p $A
+for f in google-chrome chromium-browser; do sed 's|^Exec=|Exec=env LANGUAGE=ru |' /usr/share/applications/$f.desktop > /tmp/$f.desktop && grep -c '^Exec=env LANGUAGE=ru' /tmp/$f.desktop && install -o view -g view -m 644 /tmp/$f.desktop $A/$f.desktop && rm -f /tmp/$f.desktop; done; restorecon -R $A
+```
+
+The language is chosen when the browser starts: close it completely and open it again. The language of
+websites is a separate browser setting ("Languages").
+
 ## 9. Settings: the system and the TV user
 
 **Why.**
 
-- **Firefox** — a policy removes the Fedora home page and tiles.
+- **Firefox** — a policy removes the Fedora home page and tiles and sets the frame clock: 120 Hz on its own
+  timer instead of GNOME's frames (without it Firefox drops 14–18 % of video frames, see "Known problems").
 - **Chromium** — `master_preferences` removes the Fedora start page. This affects only a new
   profile.
 - **The dark theme** is locked with a dconf lock: the light one cannot be chosen from the menu.
@@ -295,13 +321,13 @@ Russian, right Alt works as AltGr.
 
 ## 10. GNOME extensions and load in the panel
 
-**Why.** The GNOME panel shows who is working right now (CPU, GPU, VIDEO — the hardware video decoder),
+**Why.** The GNOME panel shows who is working right now (CPU, GPU, VCN — the hardware video block: decoding and encoding),
 network speed and temperature. The desktop shows disk usage. Clicking these gadgets opens nothing. Our
 extensions:
 
 | Extension | What it does |
 |---|---|
-| `atrium-lock` | blocks clicks and menus on Freon and the desktop widgets (Executor is locked by its own setting) |
+| `atrium-lock` | blocks clicks and menus on Freon and the desktop widgets (Executor is locked by its own setting); hides the GJS OSK "Screen Keyboard" toggle from the quick settings — it only removes and brings back the keyboard button in the top bar, and the button should always be there; puts the keyboard button left of the temperature |
 | `atrium-brightness-value` | shows the exact HDR brightness value next to the slider and on the bar at the bottom |
 | `atrium-no-dnd-icon` | hides the "Do Not Disturb" bell: there are no notifications on the TV at all |
 
@@ -314,7 +340,7 @@ on atrium and verify their checksums:
 
 | Extension | Version | What it gives |
 |---|---|---|
-| Executor | 30 | command output in the panel: CPU/GPU/VIDEO load and network speed |
+| Executor | 30 | command output in the panel: CPU/GPU/VCN load and network speed |
 | Desktop Widgets (azclock) | 21 (16.1) | text on the desktop: `df` and `du` of the disks |
 | GJS OSK | 53 | an on-screen keyboard like in Windows |
 
@@ -334,11 +360,12 @@ cp -r $R/usr/local/share/gnome-shell/extensions/. $E/
 chown -R root:root $E && chmod -R u=rwX,go=rX $E && restorecon -R $E && ls $E
 ```
 
-The `atrium-sysload` service writes CPU/GPU/VIDEO load and network speed to `/run/atrium-sysload/` once a
+The `atrium-sysload` service writes CPU/GPU/VCN load and network speed to `/run/atrium-sysload/` once a
 second, and Executor shows these lines in the panel. The service runs as a throwaway user with no
 privileges, with no network and with a read-only system. It takes its data from kernel counters:
 `gpu_busy_percent`, `vcn_busy_percent` (the video decoder), `/proc/stat` and the network adapter
-counters.
+counters. The load is always two digits (`01%`, 100 shows as 99) in the font's tabular figures, so the
+line keeps its width and the panel buttons next to it do not move.
 
 The service starts `/usr/local/sbin/atrium-sysload`, while the file goes to `/usr/local/bin` — it is the
 same place: on Fedora 42 and later `/usr/local/sbin` is a link to `bin` (created by the `filesystem`

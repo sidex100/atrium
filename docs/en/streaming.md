@@ -55,7 +55,7 @@ Installed in step 15 of the installation (Flathub `com.moonlight_stream.Moonligh
 | Frame rate | **120 FPS** | the TV runs at 120 Hz: one stream frame per refresh, no judder |
 | Bitrate | 150 Mbit/s | plenty for 4K 120 in AV1; a fraction of a gigabit link |
 | Video codec | AV1 | best quality per bit; the Radeon 680M decodes it in hardware |
-| Video decoder | hardware (VA-API) | the CPU stays free; in the panel VIDEO shows the decoder load |
+| Video decoder | hardware (VA-API) | the CPU stays free; in the panel VCN shows the decoder load |
 | V-Sync | off | lowest latency |
 | Frame pacing | off | lowest latency; turn it on if frame times look uneven |
 | HDR | off | the desktop runs in SDR |

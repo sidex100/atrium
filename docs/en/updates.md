@@ -51,6 +51,11 @@ all (`%ghost`), so updates do not touch them.
 | `/etc/chromium/master_preferences` | if Fedora changes this file in the chromium package; ours goes to `.rpmsave` | the Fedora start page, but only in a **new** Chromium profile | `install -m 644 /root/atrium/rootfs/etc/chromium/master_preferences /etc/chromium/` |
 | 5 remotes in `/opt/urserver/remotes` | when a new version of urserver is installed | a short tap does not click; capital letters, Cyrillic and symbols are not typed | apply the patch again (below) |
 
+The other way round, the TV user's copies of the Chrome and Chromium launchers
+(`~/.local/share/applications/{google-chrome,chromium-browser}.desktop`, Russian UI, step 8) are **not
+updated**: if a package changes its launcher (a new menu item, a different launch line), the copy stays
+old. Run the step 8 command again.
+
 Find such files after an update:
 
 ```bash

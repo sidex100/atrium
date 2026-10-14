@@ -14,6 +14,10 @@
 # (arrows U+2193 / U+2191): every physical adapter that is up (cable plugged in / Wi-Fi connected),
 # so it is visible which one carries the traffic; bytes from /sys/class/net/<if>/statistics
 # (world-readable), 1 KB = 1000 B.
+# 2026-10-14: VIDEO renamed to VCN (AMD Video Core Next, three letters like CPU and GPU); load always
+# two digits ("CPU 01%    GPU 02%    VCN 11%", 100 shows as 99) with tabular digits (Pango markup,
+# Executor <executor.markup.true>) - the line keeps its width and nothing in the top bar moves; the gap
+# between the three is about the gap between the top bar buttons (user).
 # Intel NUC version (intel_gpu_top): atrium-sysload-intel.py.
 import glob
 import os
@@ -26,6 +30,8 @@ NET = "/sys/class/net"
 FIG = "\u2007"  # figure space (as wide as a digit) pads numbers, so the text does not jump
 DOWN, UP = "\u2193", "\u2191"
 SAMPLES = 10    # GPU reads per second
+GAP = "    "    # 4 spaces (Geist 11: 16 px) ~ the gap between top bar buttons
+TNUM = '<executor.markup.true><span font_features="tnum">'  # Executor: Pango markup, tabular digits
 
 
 def gpu_files():
@@ -55,7 +61,7 @@ def mean(values):
 
 
 def pct(x):
-    return (str(round(x)) + "%").ljust(4, FIG)
+    return f"{min(round(x), 99):02d}%"
 
 
 def write(text, path=OUT):
@@ -127,7 +133,7 @@ def main():
         busy = (total1 - total0) - (idle1 - idle0)
         cpu = 100.0 * busy / (total1 - total0) if total1 > total0 else 0.0
         total0, idle0 = total1, idle1
-        write(f"CPU {pct(cpu)}   GPU {pct(mean(gfx))}   VIDEO {pct(mean(vcn))}")
+        write(f"{TNUM}CPU {pct(cpu)}{GAP}GPU {pct(mean(gfx))}{GAP}VCN {pct(mean(vcn))}</span>")
         net1, t1 = adapters(), time.monotonic()
         write(net_line(net0, net1, max(t1 - t0, 0.001)), NET_OUT)
         net0, t0 = {name: (rx, tx) for name, _, rx, tx in net1}, t1

@@ -3,13 +3,20 @@
 //  - Desktop Widgets (disk usage on the desktop): widgets stop reacting -> no right-click / long-press
 //    menu with "Lock Position", "Always on Top", "Desktop Widgets Settings".
 // Executor (CPU/GPU/VIDEO, LAN/Wi-Fi) is locked by its own setting click-on-output-active=false.
-// The on-screen keyboard (GJS OSK) is left as is on purpose.
+// 2026-10-14: GJS OSK (on-screen keyboard) adds a "Screen Keyboard" toggle to the quick settings menu; it
+// only turns the keyboard button in the top bar on and off. The toggle is hidden, the button stays
+// (indicator-enabled=true) - user: "the option is not needed, the keyboard is".
+// 2026-10-14: the keyboard button goes right before the temperature (user: "keyboard left of the
+// temperature"). GJS OSK re-creates the button on every monitor change (also on atrium-hdr on/off), so
+// the order is checked again whenever something is added to the top bar.
 // /usr/local/share/gnome-shell/extensions/atrium-lock@atrium.example.com/
 import GLib from 'gi://GLib';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const AZCLOCK = 'azclock@azclock.gitlab.com';
+const GJSOSK = 'gjsosk@vishram1123.com';
+const OSK_BUTTON = 'GJS OSK Indicator';
 
 function setReactive(actor, on) {
     actor.reactive = on;
@@ -23,6 +30,9 @@ export default class AtriumLock extends Extension {
         this._stateId = Main.extensionManager.connect('extension-state-changed', () => this._queue());
         if (Main.layoutManager._startingUp)
             this._startupId = Main.layoutManager.connect('startup-complete', () => this._queue());
+        // a button (re)added to the top bar may change the order
+        this._boxIds = [Main.panel._leftBox, Main.panel._centerBox, Main.panel._rightBox].map(box =>
+            [box, box.connect('child-added', () => this._queue())]);
         this._queue();
     }
 
@@ -58,6 +68,23 @@ export default class AtriumLock extends Extension {
             widget._menu?.close();
             widget.reactive = false;
         });
+
+        // the quick settings grid skips hidden items
+        this._oskToggles().forEach(item => {
+            item.menu?.close();
+            item.visible = false;
+        });
+
+        const kb = Main.panel.statusArea[OSK_BUTTON]?.container;
+        const temp = freon?.container;
+        if (kb && temp?.get_parent() && kb.get_next_sibling() !== temp) {
+            kb.get_parent()?.remove_child(kb);
+            temp.get_parent().insert_child_below(kb, temp);
+        }
+    }
+
+    _oskToggles() {
+        return Main.extensionManager.lookup(GJSOSK)?.stateObj?._quick_settings_indicator?.quickSettingsItems ?? [];
     }
 
     _disconnectAz() {
@@ -80,6 +107,8 @@ export default class AtriumLock extends Extension {
             Main.layoutManager.disconnect(this._startupId);
             this._startupId = 0;
         }
+        this._boxIds?.forEach(([box, id]) => box.disconnect(id));
+        this._boxIds = null;
         this._disconnectAz();
 
         const freon = Main.panel.statusArea.freonMenu;
@@ -87,6 +116,9 @@ export default class AtriumLock extends Extension {
             setReactive(freon, true);
         this._azclock()?.widgets?.forEach(widget => {
             widget.reactive = true;
+        });
+        this._oskToggles().forEach(item => {
+            item.visible = true;
         });
     }
 }

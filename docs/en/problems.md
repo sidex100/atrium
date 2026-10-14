@@ -130,6 +130,15 @@ GNOME does not accept clicks from anyone, including RDP. One more tap fixes it.
 **Cause.** At 250 % scaling RetroArch requests a 3840×2160 fullscreen surface in logical pixels. **Fix:**
 `video_fullscreen_x = "1536"` and `video_fullscreen_y = "864"` in `retroarch.cfg` (install step 15).
 
+## Spotify: a blue Windows 9x style window frame
+
+**Cause.** Spotify is Chromium inside, and new versions run on GNOME directly through Wayland. GNOME does
+not draw frames for Wayland apps, the app draws its own, and Spotify cannot draw a GTK style frame. The
+result is Chromium's stock frame. **Fix:** run Spotify through Xwayland, then GNOME draws the frame
+(install step 8). Rollback: `runuser -u view -- flatpak override --user --reset com.spotify.Client` and
+delete `~/.var/app/com.spotify.Client/config/spotify-flags.conf` of the TV user. Once Spotify can draw a
+GTK style frame, you can go back to Wayland.
+
 ## TV crops the picture on the left
 
 **Cause.** The picture is shifted by 4 pixels: this is "Screen Shift" in LG's OLED Care settings.
@@ -149,7 +158,7 @@ measures the GPU load per process. Results:
   GNOME re-composes the whole screen in HDR (~30 %). Half of the time the GPU is 95–100 % busy. Without HDR —
   about 12 %;
 - Chrome flags (`WaylandOverlayDelegation`, zero-copy) do not help; Vulkan turns the hardware decoder off (30 %
-  dropped); Firefox has no HDR and drops 20 %; Chromium behaves like Chrome;
+  dropped); Firefox has no HDR, and its drops are a separate story (below); Chromium behaves like Chrome;
 - in normal viewing 0.1–0.5 % of frames are dropped. A batch adds up at the start: quality switch, going full
   screen, and for a signed-in user resuming from the last position. "Stats for nerds" on top of the video
   adds drops by itself.
@@ -160,6 +169,25 @@ turns HDR on by itself (installation, step 9, "Auto HDR").
 The script runs as root on the box: `python3 atrium-browser-bench.py` (all variants) or with variant names,
 for example `python3 atrium-browser-bench.py chrome-base chrome-real-auto`. It closes the TV user's browsers,
 writes results to `/tmp/atrium-browser-bench.txt` and deletes its temporary profiles at the end.
+
+## Dropped frames in Firefox
+
+**What happened.** Firefox dropped 14–18 % of frames on YouTube 4K60, on any codec and even on 1080p
+H.264. The GPU was 7–20 % busy meanwhile.
+
+**Where the truth was** (the same script `src/tools/atrium-browser-bench.py`, variants `firefox-*`):
+- not the codecs. The GPU decodes through VA-API, a 4K frame in 0.45 ms (`MOZ_LOG`). The system ffmpeg
+  instead of the bundled ffvpx changes nothing;
+- not AV1. Firefox says it plays AV1 4K60 smoothly, but YouTube gives it 4K only in VP9; without VP9 it
+  is H.264 1080p. Extensions like enhanced-h264ify do not help for that reason;
+- not WebRender. It already draws on the GPU: the software variant eats 3 cores and drops 87 %;
+- **the frame clock.** Firefox draws on the frames GNOME sends it on Wayland, and they come unevenly: the
+  page gets 86–91 frames a second instead of 120, with dozens of hitches.
+
+**Fix:** in the Firefox policy (`/etc/firefox/policies/policies.json`, install step 9)
+`widget.wayland.vsync.enabled = false` and `layout.frame_rate = 120`: Firefox draws on its own 120 Hz
+timer. The same video full screen — 1 dropped of 1810 (was 258), the page gets a steady 119–120 frames a
+second. With another refresh rate, put that number instead of 120.
 
 ## Stutter in Steam Link and Moonlight
 

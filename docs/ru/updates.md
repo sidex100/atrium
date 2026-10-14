@@ -51,6 +51,11 @@ gnome-software и PackageKit **не установлены**, поэтому н�
 | `/etc/chromium/master_preferences` | если Fedora поменяет этот файл в пакете chromium; наш уйдёт в `.rpmsave` | стартовая страница Fedora, но только в **новом** профиле Chromium | `install -m 644 /root/atrium/rootfs/etc/chromium/master_preferences /etc/chromium/` |
 | 5 пультов в `/opt/urserver/remotes` | при установке новой версии urserver | короткий тап не кликает; заглавные, кириллица и символы не печатаются | патч заново (ниже) |
 
+Наоборот, **не обновятся** копии ярлыков Chrome и Chromium у пользователя ТВ
+(`~/.local/share/applications/{google-chrome,chromium-browser}.desktop`, русский интерфейс, шаг 8): если
+пакет поменяет свой ярлык (новый пункт меню, другая строка запуска), копия останется старой. Повторить
+команду из шага 8.
+
 Найти такие файлы после обновления:
 
 ```bash

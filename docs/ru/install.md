@@ -234,11 +234,37 @@ flatpak install -y --noninteractive flathub com.spotify.Client
 Ключ Google должен иметь отпечаток `EB4C 1BFD 4F04 2F6D DDCC EC91 7721 F63B D38B 4796`. Проверить его
 можно командой `rpm -qi gpg-pubkey-d38b4796`.
 
+**Spotify через Xwayland.** Под Wayland в GNOME Spotify рисует свою рамку окна в стиле Windows 9x
+(подробнее — в «Известных проблемах»). Через Xwayland рамку рисует GNOME, как у остальных окон.
+Файлы те же, что в `rootfs/home/view/.local/share/flatpak/overrides/` и
+`rootfs/home/view/.var/app/com.spotify.Client/config/`:
+
+```bash
+runuser -u view -- flatpak override --user --unset-env=WAYLAND_DISPLAY --nosocket=wayland --nosocket=fallback-x11 --socket=x11 com.spotify.Client
+runuser -u view -- sh -c 'mkdir -p /home/view/.var/app/com.spotify.Client/config && printf "%s\n" "--ozone-platform=x11" > /home/view/.var/app/com.spotify.Client/config/spotify-flags.conf'
+```
+
+**Chrome и Chromium на русском** (по желанию; система и GNOME остаются на английском). Выбора языка
+интерфейса в настройках Chrome под Linux нет: язык берётся из переменных окружения (`LANGUAGE`, `LC_*`,
+`LANG`). Пользователю ТВ кладём копии системных ярлыков с `env LANGUAGE=ru` в строках запуска. Ярлык с
+тем же именем в `~/.local/share/applications` главнее системного, поэтому его берут и док, и открытие
+ссылок. Копии делаем из системных файлов (файлы Google и Fedora в репозиторий не кладём). Каждая команда
+должна вывести `3`:
+
+```bash
+A=/home/view/.local/share/applications; runuser -u view -- mkdir -p $A
+for f in google-chrome chromium-browser; do sed 's|^Exec=|Exec=env LANGUAGE=ru |' /usr/share/applications/$f.desktop > /tmp/$f.desktop && grep -c '^Exec=env LANGUAGE=ru' /tmp/$f.desktop && install -o view -g view -m 644 /tmp/$f.desktop $A/$f.desktop && rm -f /tmp/$f.desktop; done; restorecon -R $A
+```
+
+Язык выбирается при запуске браузера: закрой его целиком и открой снова. Язык сайтов — отдельно, в
+настройках браузера («Языки»).
+
 ## 9. Настройки: система и пользователь ТВ
 
 **Зачем.**
 
-- **Firefox** — политика убирает домашнюю страницу и плитки Fedora.
+- **Firefox** — политика убирает домашнюю страницу и плитки Fedora и задаёт частоту кадров: 120 Гц своим
+  таймером вместо кадров от GNOME (без этого он теряет 14–18 % кадров видео, см. «Известные проблемы»).
 - **Chromium** — `master_preferences` убирает стартовую страницу Fedora. Это касается только нового
   профиля.
 - **Тёмная тема** закреплена замком dconf: светлую из меню не выбрать.
@@ -287,13 +313,13 @@ $V gsettings get org.gnome.desktop.interface clock-format
 
 ## 10. Расширения GNOME и загрузка в панели
 
-**Зачем.** В панели GNOME видно, кто сейчас работает (CPU, GPU, VIDEO — аппаратный декодер видео),
+**Зачем.** В панели GNOME видно, кто сейчас работает (CPU, GPU, VCN — аппаратный блок видео: декодирование и кодирование),
 скорость сети и температура. На рабочем столе — заполнение дисков. Клики по этим гаджетам ничего не
 открывают. Наши расширения:
 
 | Расширение | Что делает |
 |---|---|
-| `atrium-lock` | запрещает клики и меню у Freon и виджетов рабочего стола (Executor закрыт своей настройкой) |
+| `atrium-lock` | запрещает клики и меню у Freon и виджетов рабочего стола (Executor закрыт своей настройкой); прячет из быстрого меню переключатель «Screen Keyboard» GJS OSK — он только убирает и возвращает кнопку клавиатуры в панели, а кнопка нужна всегда; ставит кнопку клавиатуры левее температуры |
 | `atrium-brightness-value` | показывает точное значение HDR-яркости рядом с ползунком и на полоске внизу |
 | `atrium-no-dnd-icon` | прячет колокольчик «Не беспокоить»: уведомлений на ТВ нет вообще |
 
@@ -306,7 +332,7 @@ GNOME 50 перестаёт загружать расширения из дом�
 
 | Расширение | Версия | Что даёт |
 |---|---|---|
-| Executor | 30 | вывод команды в панели: загрузка CPU/GPU/VIDEO и скорость сети |
+| Executor | 30 | вывод команды в панели: загрузка CPU/GPU/VCN и скорость сети |
 | Desktop Widgets (azclock) | 21 (16.1) | текст на рабочем столе: `df` и `du` дисков |
 | GJS OSK | 53 | экранная клавиатура как в Windows |
 
@@ -326,10 +352,12 @@ cp -r $R/usr/local/share/gnome-shell/extensions/. $E/
 chown -R root:root $E && chmod -R u=rwX,go=rX $E && restorecon -R $E && ls $E
 ```
 
-Служба `atrium-sysload` раз в секунду пишет загрузку CPU/GPU/VIDEO и скорость сети в `/run/atrium-sysload/`,
+Служба `atrium-sysload` раз в секунду пишет загрузку CPU/GPU/VCN и скорость сети в `/run/atrium-sysload/`,
 а Executor показывает эти строки в панели. Служба работает от одноразового пользователя без прав, без
 сети и с системой только на чтение. Данные берёт из счётчиков ядра: `gpu_busy_percent`, `vcn_busy_percent`
-(декодер видео), `/proc/stat` и счётчиков сетевых адаптеров.
+(декодер видео), `/proc/stat` и счётчиков сетевых адаптеров. Загрузка всегда пишется двумя цифрами
+(`01%`, 100 показывается как 99) с моноширинными цифрами шрифта: строка не меняет ширину, и соседние кнопки
+панели не сдвигаются.
 
 Служба запускает `/usr/local/sbin/atrium-sysload`, а файл кладём в `/usr/local/bin` — это одно и то же:
 в Fedora 42 и новее `/usr/local/sbin` — ссылка на `bin` (её создаёт пакет `filesystem`).

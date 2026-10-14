@@ -1,0 +1,6 @@
+[Context]
+sockets=!fallback-x11;!wayland;x11;
+unset-environment=WAYLAND_DISPLAY;
+
+[Environment]
+WAYLAND_DISPLAY=
