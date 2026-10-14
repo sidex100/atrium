@@ -488,8 +488,9 @@ PowerShell as administrator:
 Set-SmbClientConfiguration -EnableInsecureGuestLogons $true -RequireSecuritySignature $false -Force
 ```
 
-`/etc/sysconfig/wsdd` contains the network interface name (`eno1`) and the Windows workgroup (`TRUE`) —
-check yours: `ip -br link`.
+`/etc/sysconfig/wsdd` contains the network interface name (`eno1`) and the Windows workgroup (`WORKGROUP`,
+also in `smb.conf`) — check yours: the interface with `ip -br link`, the workgroup on the PC in PowerShell
+with `(Get-CimInstance Win32_ComputerSystem).Workgroup`. `WORKGROUP` is the Windows default.
 
 **Wi-Fi takes priority over the wire** (optional). If you connect to any Wi-Fi, internet traffic goes
 through it while it stays connected. The home network always stays on the wire:

@@ -2,5 +2,5 @@
 # Use, e.g., "-i eth0" to restrict operations to a specific interface
 # Refer to the wsdd(8) man page for details
 
-# 2026-10-03: show atrium in Windows Network, workgroup TRUE, LAN interface only
-OPTIONS="--workgroup TRUE --interface eno1"
+# 2026-10-03: show atrium in Windows Network, workgroup WORKGROUP (Windows default), LAN interface only
+OPTIONS="--workgroup WORKGROUP --interface eno1"

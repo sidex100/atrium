@@ -478,8 +478,9 @@ Windows 11 по умолчанию не пускает в общие папки 
 Set-SmbClientConfiguration -EnableInsecureGuestLogons $true -RequireSecuritySignature $false -Force
 ```
 
-`/etc/sysconfig/wsdd` содержит имя сетевого интерфейса (`eno1`) и рабочую группу Windows (`TRUE`) —
-проверь свои: `ip -br link`.
+`/etc/sysconfig/wsdd` содержит имя сетевого интерфейса (`eno1`) и рабочую группу Windows (`WORKGROUP`,
+она же в `smb.conf`) — проверь свои: интерфейс — `ip -br link`, группу — на ПК в PowerShell
+`(Get-CimInstance Win32_ComputerSystem).Workgroup`. `WORKGROUP` — значение Windows по умолчанию.
 
 **Wi-Fi важнее провода** (по желанию). Если подключить любой Wi-Fi, интернет пойдёт через него, пока он
 подключён. Домашняя сеть всегда остаётся на проводе:
