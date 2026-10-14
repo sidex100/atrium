@@ -328,7 +328,8 @@ def cpu_ticks(pidlist):
             args = open(f"/proc/{p}/cmdline").read().split("\0")
         except OSError:
             continue
-        args = [a for a in args if a]
+        # Chrome (and forked Firefox children) rewrite their command line into one space-separated string
+        args = " ".join(args).split()
         kind = "main"
         if "-contentproc" in args and args:
             kind = args[-1]

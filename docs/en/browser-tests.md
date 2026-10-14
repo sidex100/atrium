@@ -129,6 +129,17 @@ HDR again: half of the time the GPU is 95–100 % busy. Without HDR — 13 %. Fl
 breaks the hardware decoder. **Fix:** the desktop in SDR, HDR only for movies in mpv (install step 9,
 "Auto HDR").
 
+### Chrome 155, 2026-10-14, desktop in SDR
+
+| Variant | Video | Dropped | GPU | Page frames |
+|---|---|---|---|---|
+| `chrome-base` | VP9 4K SDR | 2 of 1809 (0.1 %) | 17 % | 120/s, longest gap 9 ms, 0 hitches |
+| `chrome-base-auto` | VP9 4K SDR | 2 of 1808 (0.1 %) | 18 % | 120/s, 0 hitches |
+| `chrome-base-high` | VP9 4K SDR | 2 of 1808 (0.1 %) | 20 % | 120/s, 0 hitches |
+
+Chrome's frame clock is even, the GPU clock mode makes no difference. In SDR YouTube serves Chrome VP9, in
+HDR — AV1.
+
 ### Firefox 158, 2026-10-14
 
 The desktop in SDR, full screen, a fresh profile for every variant.
