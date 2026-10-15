@@ -12,6 +12,7 @@
 | Spotify, RetroDECK, Steam Link, Moonlight | `flatpak update` |
 | GNOME extensions in `/usr/local/share/gnome-shell/extensions` | never update by themselves; install a new version by hand, the same way as during installation |
 | Unified Remote | an RPM without a repository, `dnf` does not touch it; install a new version by hand, then apply the patch again (below) |
+| Windscribe | an RPM without a repository; a new stable version comes from GitHub (Windscribe/Desktop-App), check the sha256 from the release notes, `dnf install ./…rpm` |
 
 gnome-software and PackageKit are **not installed**, so an "updates available" notice will never pop up
 on the TV. GNOME does not check for extension updates (`allow-extension-installation false`).

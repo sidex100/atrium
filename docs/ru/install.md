@@ -259,6 +259,32 @@ for f in google-chrome chromium-browser; do sed 's|^Exec=|Exec=env LANGUAGE=ru |
 Язык выбирается при запуске браузера: закрой его целиком и открой снова. Язык сайтов — отдельно, в
 настройках браузера («Языки»).
 
+**IPTV — Fred TV** (по желанию). Flathub `dev.fredol.open-tv`, играет каналы своим встроенным mpv (декодирует
+видеокарта). Значок в доке — перед Windscribe (`00-atrium-dock`). Каналы — два бесплатных списка с GitHub,
+отдельными источниками: **Free-TV** — официально бесплатные каналы всего мира (около 2000, категории — страны,
+программа передач прописана в списке) и **iptv-org RU** — всё на русском (около 670, категории — жанры). Базу
+источников Fred TV можно заполнить командой (Fred TV должен быть закрыт, он сам создаёт базу при первом
+запуске); `refreshOnStart` — при каждом запуске он заново скачивает оба списка:
+
+```bash
+flatpak install -y --noninteractive flathub dev.fredol.open-tv
+if pgrep -u view -f "open[-_]tv" >/dev/null; then echo "close Fred TV first"; else runuser -u view -- python3 - <<'EOF'
+import sqlite3
+c = sqlite3.connect("/home/view/.var/app/dev.fredol.open-tv/data/open-tv/db.sqlite")
+c.executemany("INSERT OR IGNORE INTO sources (name, source_type, url, enabled) VALUES (?, 1, ?, 1)", [
+    ("Free-TV", "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8"),
+    ("iptv-org RU", "https://iptv-org.github.io/iptv/languages/rus.m3u")])
+c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('refreshOnStart', 'true')")
+c.commit()
+print(c.execute("SELECT id, name, source_type, enabled FROM sources").fetchall())
+EOF
+fi
+```
+
+Канал — одно нажатие на плитку и подождать 5–10 секунд, откроется окно mpv; повторное нажатие отменяет
+запуск. Показать только один список — шестерёнка → карточки источников → галочка. В бесплатных списках много
+мёртвых и закрытых по стране каналов — это нормально.
+
 ## 9. Настройки: система и пользователь ТВ
 
 **Зачем.**
@@ -517,6 +543,27 @@ Set-SmbClientConfiguration -EnableInsecureGuestLogons $true -RequireSecuritySign
 R=/root/atrium/rootfs
 \cp -p /etc/NetworkManager/NetworkManager.conf /etc/NetworkManager/NetworkManager.conf.bak-$(date +%Y%m%d) && install -m 644 $R/etc/NetworkManager/NetworkManager.conf /etc/NetworkManager/NetworkManager.conf && nmcli general reload conf
 ```
+
+**VPN Windscribe** (по желанию; нужен платный или бесплатный аккаунт Windscribe). Включается руками, когда
+нужно: для торрентов и при интернете через телефон. Официальный пакет с GitHub, стабильная версия
+(«guinea pig» — тестовые, их не берём); контрольная сумма — из описания релиза, ключ подписи — оттуда же:
+
+```bash
+cd /root/dist && curl -fLO https://github.com/Windscribe/Desktop-App/releases/download/v2.24.13/windscribe_2.24.13_amd64_fedora.rpm && echo "7f37792789fea5299325f4b121cb3a347c088fa38d5311f4f13aaac3684c30f8  windscribe_2.24.13_amd64_fedora.rpm" | sha256sum -c
+curl -fLO https://github.com/Windscribe/Desktop-App/releases/download/v2.24.13/gnupg_key.pub && gpg --show-keys --with-subkey-fingerprints gnupg_key.pub | grep -i BD09F61D249A38FA && rpm --import gnupg_key.pub && rpm -K windscribe_2.24.13_amd64_fedora.rpm && dnf install -y ./windscribe_2.24.13_amd64_fedora.rpm && systemctl is-active windscribe-helper
+```
+
+Пакет ставит программу в `/opt/windscribe` и службу `windscribe-helper` (root, работает всегда: через неё
+окно поднимает туннель, маршруты и фаервол; пока VPN выключен, она ничего не меняет). Значок в доке —
+последним, перед корзиной (`00-atrium-dock`, шаг 9). В окне Windscribe после входа:
+- **General → Launch on startup — выкл., Auto-connect — выкл.** — VPN только когда нужен;
+- **Connection → Firewall → Automatic** — пока VPN включён, трафик мимо туннеля не уходит, даже если
+  туннель упал; без VPN бокс работает как обычно;
+- **Connection → Allow LAN Traffic — вкл.** — иначе пропадут общая папка, RDP, пульт, SSH и стрим с ПК.
+
+Пока VPN включён, имена вида `.lan` на самом боксе не работают: DNS идёт через Windscribe, чтобы провайдер
+не видел запросы. Не закрывай окно Windscribe совсем, пока VPN нужен: при выходе из программы туннель
+отключается.
 
 ## 14. Управление: телефон и RDP
 

@@ -12,6 +12,7 @@
 | Spotify, RetroDECK, Steam Link, Moonlight | `flatpak update` |
 | Расширения GNOME в `/usr/local/share/gnome-shell/extensions` | сами не обновляются никогда; новую версию ставим руками, как при установке |
 | Unified Remote | RPM без репозитория, `dnf` его не трогает; новая версия — вручную, потом заново патч (ниже) |
+| Windscribe | RPM без репозитория; новая стабильная версия — с GitHub (Windscribe/Desktop-App), сверить sha256 из описания релиза, `dnf install ./…rpm` |
 
 gnome-software и PackageKit **не установлены**, поэтому на ТВ никогда не всплывёт «доступны
 обновления». GNOME не проверяет обновления расширений (`allow-extension-installation false`).

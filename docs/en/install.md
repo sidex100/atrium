@@ -266,6 +266,32 @@ for f in google-chrome chromium-browser; do sed 's|^Exec=|Exec=env LANGUAGE=ru |
 The language is chosen when the browser starts: close it completely and open it again. The language of
 websites is a separate browser setting ("Languages").
 
+**IPTV — Fred TV** (optional). Flathub `dev.fredol.open-tv`, plays channels with its own bundled mpv (the GPU
+decodes). The dock icon is before Windscribe (`00-atrium-dock`). Channels come from two free lists on GitHub,
+as separate sources: **Free-TV** — officially free channels of the whole world (about 2000, categories are
+countries, the programme guide is in the list) and **iptv-org RU** — everything in Russian (about 670,
+categories are genres). Fred TV's source database can be filled by a command (Fred TV must be closed; it
+creates the database on its first start); `refreshOnStart` makes it download both lists again on every start:
+
+```bash
+flatpak install -y --noninteractive flathub dev.fredol.open-tv
+if pgrep -u view -f "open[-_]tv" >/dev/null; then echo "close Fred TV first"; else runuser -u view -- python3 - <<'EOF'
+import sqlite3
+c = sqlite3.connect("/home/view/.var/app/dev.fredol.open-tv/data/open-tv/db.sqlite")
+c.executemany("INSERT OR IGNORE INTO sources (name, source_type, url, enabled) VALUES (?, 1, ?, 1)", [
+    ("Free-TV", "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8"),
+    ("iptv-org RU", "https://iptv-org.github.io/iptv/languages/rus.m3u")])
+c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('refreshOnStart', 'true')")
+c.commit()
+print(c.execute("SELECT id, name, source_type, enabled FROM sources").fetchall())
+EOF
+fi
+```
+
+A channel is one click on its tile, then wait 5–10 seconds, an mpv window opens; a second click cancels the
+start. To show only one list: the gear → the source cards → the check mark. Free lists have many dead and
+geo-blocked channels — that is normal.
+
 ## 9. Settings: the system and the TV user
 
 **Why.**
@@ -526,6 +552,30 @@ through it while it stays connected. The home network always stays on the wire:
 R=/root/atrium/rootfs
 \cp -p /etc/NetworkManager/NetworkManager.conf /etc/NetworkManager/NetworkManager.conf.bak-$(date +%Y%m%d) && install -m 644 $R/etc/NetworkManager/NetworkManager.conf /etc/NetworkManager/NetworkManager.conf && nmcli general reload conf
 ```
+
+**Windscribe VPN** (optional; needs a Windscribe account, paid or free). Switched on by hand when needed:
+for torrents and when the internet comes from a phone. The official package from GitHub, a stable release
+("guinea pig" ones are test builds, skip them); the checksum is from the release notes, the signing key
+from the same release:
+
+```bash
+cd /root/dist && curl -fLO https://github.com/Windscribe/Desktop-App/releases/download/v2.24.13/windscribe_2.24.13_amd64_fedora.rpm && echo "7f37792789fea5299325f4b121cb3a347c088fa38d5311f4f13aaac3684c30f8  windscribe_2.24.13_amd64_fedora.rpm" | sha256sum -c
+curl -fLO https://github.com/Windscribe/Desktop-App/releases/download/v2.24.13/gnupg_key.pub && gpg --show-keys --with-subkey-fingerprints gnupg_key.pub | grep -i BD09F61D249A38FA && rpm --import gnupg_key.pub && rpm -K windscribe_2.24.13_amd64_fedora.rpm && dnf install -y ./windscribe_2.24.13_amd64_fedora.rpm && systemctl is-active windscribe-helper
+```
+
+The package installs the app into `/opt/windscribe` and the `windscribe-helper` service (root, always
+running: the window brings up the tunnel, routes and firewall through it; while the VPN is off it changes
+nothing). The dock icon is the last one, before the trash (`00-atrium-dock`, step 9). In the Windscribe
+window after signing in:
+- **General → Launch on startup — off, Auto-connect — off** — the VPN only when needed;
+- **Connection → Firewall → Automatic** — while the VPN is on, traffic never goes around the tunnel, even
+  if the tunnel drops; without the VPN the box works as usual;
+- **Connection → Allow LAN Traffic — on** — otherwise the shared folder, RDP, the remote, SSH and game
+  streaming from the PC are cut off.
+
+While the VPN is on, `.lan` names do not work on the box itself: DNS goes through Windscribe so the provider
+does not see the queries. Do not quit the Windscribe window while you need the VPN: quitting the app drops
+the tunnel.
 
 ## 14. Control: phone and RDP
 

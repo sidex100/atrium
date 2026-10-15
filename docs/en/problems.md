@@ -208,6 +208,12 @@ In detail, with the MikroTik commands and network recommendations — [streaming
 If the name `atrium.lan` points to the old address: `ipconfig /flushdns`. The Windows DNS cache keeps entries
 for a day. If a corporate VPN is up on the PC, it may block DNS queries to the home router.
 
+## Sound breaks every few seconds while RDP is connected
+
+**Cause.** GNOME Remote Desktop sends the sound to the PC (`RDP.AUDIO_PLAYBACK` in the journal), and it is this
+stream on the PC that breaks. The box's DAC plays smoothly. **Check:** listen through the TV speakers (the DAC)
+or disconnect RDP.
+
 ## RDP password "does not work"
 
 **Cause.** The password was typed into the hidden `grdctl` field, and in the Russian layout Backspace over
