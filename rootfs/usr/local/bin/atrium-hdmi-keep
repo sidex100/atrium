@@ -1,0 +1,157 @@
+#!/bin/bash
+# atrium-hdmi-keep - keep the TV "connected" on the box's HDMI while the TV is on another input or
+# unpowered, so GNOME never loses its only screen and RDP (screen sharing) keeps working.
+#
+# Most people do not need this: a TV in standby on the box's input still answers, GNOME keeps the
+# screen, RDP works. We need it because two inputs of the TV are in daily use (the box and a PS5):
+# after a while on the other input the TV stops answering, GNOME is left with no monitor and
+# gnome-remote-desktop fails with "Failed to record monitor: Unknown monitor".
+#
+# How: the kernel's own machinery, nothing running in the background. video=<connector>:e forces the
+# connector on, drm.edid_firmware=<connector>:edid/<file> makes the kernel use the saved TV EDID
+# instead of asking the TV. amdgpu loads from the initramfs, so the EDID file is added there through a
+# dracut snippet. Side effect: while this is on the kernel never reads the TV's EDID again - after a
+# change on the TV that alters its EDID (Deep Colour per input, a TV firmware update, another TV) do:
+# off, reboot, on, reboot.
+#
+#   atrium-hdmi-keep on       save the TV EDID (the TV must be on this input), add the kernel parameters
+#   atrium-hdmi-keep off      remove the parameters, the EDID file and the dracut snippet
+#   atrium-hdmi-keep status   configured / active, the saved EDID, what the kernel and GNOME see
+# on and off take effect after a reboot. Run as root.
+set -u
+
+CONN=HDMI-A-1                                   # DRM connector name: ls /sys/class/drm
+EDID_NAME=atrium-tv.bin
+EDID=/usr/lib/firmware/edid/$EDID_NAME
+DRACUT=/etc/dracut.conf.d/90-atrium-hdmi-keep.conf
+GRUB=/etc/default/grub
+CMDLINE=/etc/kernel/cmdline
+MARK=atrium-hdmi-keep
+ARGS="drm.edid_firmware=$CONN:edid/$EDID_NAME video=$CONN:e"
+VIEW="runuser -u view -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
+SYS=$(ls -d /sys/class/drm/card*-$CONN 2>/dev/null | head -1)
+
+die() { echo "$MARK: $*" >&2; exit 1; }
+
+configured() {   # exactly our parameters in the boot config (next boot)
+    local src p
+    src=$([ -f $CMDLINE ] && cat $CMDLINE || grubby --info=DEFAULT 2>/dev/null)
+    for p in $ARGS; do echo "$src" | grep -qF -- "$p" || return 1; done
+}
+active() {       # exactly our parameters in the running kernel
+    local p
+    for p in $ARGS; do grep -qF -- "$p" /proc/cmdline || return 1; done
+}
+
+edid_info() {   # file -> "ok|bad <blocks> <vendor> <name>"
+    python3 - "$1" <<'EOF'
+import sys
+d = open(sys.argv[1], "rb").read()
+ok = len(d) >= 128 and len(d) % 128 == 0 and d[:8] == b"\x00\xff\xff\xff\xff\xff\xff\x00" \
+    and all(sum(d[i:i + 128]) % 256 == 0 for i in range(0, len(d), 128))
+vendor = name = "?"
+if len(d) >= 128:
+    v = (d[8] << 8) | d[9]
+    vendor = "".join(chr(64 + ((v >> s) & 31)) for s in (10, 5, 0))
+    for i in range(54, 126, 18):
+        if d[i:i + 4] == b"\x00\x00\x00\xfc":
+            name = d[i + 5:i + 18].decode("ascii", "replace").split("\n")[0].strip()
+print("ok" if ok else "bad", len(d) // 128, vendor, name)
+EOF
+}
+
+backup() { [ -f "$1" ] && [ ! -e "$1.bak-$(date +%Y%m%d)" ] && cp -p "$1" "$1.bak-$(date +%Y%m%d)"; return 0; }
+
+rebuild_initramfs() {
+    echo "rebuilding the initramfs of every installed kernel (about a minute)..."
+    dracut -f --regenerate-all || die "dracut failed"
+}
+
+do_on() {
+    [ -n "$SYS" ] || die "connector $CONN not found in /sys/class/drm"
+    st=$(cat $SYS/status)
+    [ "$st" = connected ] || die "$CONN is '$st': put the TV on this input, turn it on and run again"
+    if active; then
+        echo "note: keep is active in the running kernel, so the EDID read now is the saved file itself,"
+        echo "      not a fresh read from the TV. To re-save after a change on the TV: off, reboot, on, reboot."
+    fi
+    tmp=$(mktemp)
+    cat $SYS/edid > $tmp
+    read -r ok blocks vendor name < <(edid_info $tmp)
+    [ "$ok" = ok ] || { rm -f $tmp; die "EDID read from $CONN is empty or invalid - is the TV on?"; }
+    install -D -m 644 $tmp $EDID && rm -f $tmp
+    restorecon $EDID
+    printf '%s\n' "# $MARK: TV EDID for drm.edid_firmware - amdgpu loads in the initramfs, so the file must be there too" \
+        "install_items+=\" $EDID \"" > $DRACUT
+    echo "saved EDID of $vendor '$name' ($blocks blocks) to $EDID"
+    rebuild_initramfs
+    backup $GRUB; backup $CMDLINE
+    grubby --update-kernel=ALL --args="$ARGS" || die "grubby failed"
+    # Fedora's grubby also writes /etc/kernel/cmdline and GRUB_CMDLINE_LINUX; make sure, without duplicates
+    [ ! -f $CMDLINE ] || for p in $ARGS; do grep -qF -- "$p" $CMDLINE || sed -i "1s|\$| $p|" $CMDLINE; done
+    for p in $ARGS; do grep -qF -- "$p" $GRUB || sed -i "/^GRUB_CMDLINE_LINUX=/s|\"\$| $p\"|" $GRUB; done
+    grep -q "^# $MARK:" $GRUB || sed -i "/^GRUB_CMDLINE_LINUX=/i # $MARK: $CONN forced on with the saved TV EDID - GNOME keeps the screen, RDP works while the TV is on another input or off" $GRUB
+    echo "on: configured. Reboot to apply, then: $MARK status"
+}
+
+do_off() {
+    backup $GRUB; backup $CMDLINE
+    grubby --update-kernel=ALL --remove-args="$ARGS" || die "grubby failed"
+    for p in $ARGS; do
+        pe=${p//./\\.}
+        [ ! -f $CMDLINE ] || sed -i "s|[[:space:]]*$pe||g" $CMDLINE
+        sed -i "s|[[:space:]]*$pe||g" $GRUB
+    done
+    sed -i "/^# $MARK:/d" $GRUB
+    rm -f $EDID $DRACUT
+    rebuild_initramfs
+    echo "off: configured. Reboot to apply - the TV is detected the usual way again"
+    echo "     (RDP then needs the TV on this input or in standby)."
+}
+
+do_status() {
+    conf=off; configured && conf=on
+    act=off; active && act=on
+    echo "configured: $conf   (boot entries, $CMDLINE, $GRUB)"
+    now=$(grep -oE "drm\.edid_firmware=[^ ]+|video=$CONN:[^ ]+" /proc/cmdline | tr '\n' ' ')
+    echo "active now: $act   (running kernel $(uname -r)${now:+ has: $now})"
+    [ "$conf" = "$act" ] || echo "  -> reboot pending"
+    echo "parameters: $ARGS"
+    if [ -f $EDID ]; then
+        read -r ok blocks vendor name < <(edid_info $EDID)
+        echo "saved EDID: $EDID - $vendor '$name', $blocks blocks, $ok, sha256 $(sha256sum $EDID | cut -c1-16)"
+    else
+        echo "saved EDID: none"
+    fi
+    n=$(lsinitrd /boot/initramfs-$(uname -r).img 2>/dev/null | grep -c "edid/$EDID_NAME")
+    echo "dracut:     $([ -f $DRACUT ] && echo $DRACUT || echo none); initramfs of $(uname -r) has $n copy of the file"
+    if [ -n "$SYS" ]; then
+        same=""; [ -f $EDID ] && cmp -s $SYS/edid $EDID && same=", same as the saved file"
+        echo "$CONN:   status $(cat $SYS/status), dpms $(cat $SYS/dpms), edid $(wc -c < $SYS/edid) bytes$same"
+        [ "$act" = on ] && echo "  (keep active: status is forced and the EDID is the saved file - whether the TV is really there, see 'HDMI link')"
+    else
+        echo "$CONN:   not found in /sys/class/drm"
+    fi
+    echo "kernel log: $(journalctl -b -k -q --no-pager 2>/dev/null | grep -c "forcing $CONN connector on") x 'forcing $CONN connector on'"
+    frl=$(sed -n '/^HPO:/,/^$/p' /sys/kernel/debug/dri/*/amdgpu_dm_dtn_log 2>/dev/null |
+        awk '/^\[[0-9]+\]:/{print $7" lanes, "$4", "$5" bit, "$8; exit}')
+    # the FRL table exists only while the TV receives: with keep active this is the one sign the TV is really there
+    # (a TV in standby drops the link after a few minutes too and trains it again when woken)
+    if [ -n "$frl" ]; then
+        echo "HDMI link:  FRL (HDMI 2.1) trained: $frl - the TV receives"
+    else
+        echo "HDMI link:  no FRL link - the TV is not receiving (standby for a while, another input, unpowered) or the output is off"
+    fi
+    g=$($VIEW gdctl show 2>/dev/null)
+    mon=$(echo "$g" | grep -m1 -oE "Monitor [^ ]+ \([^)]*\)")
+    mode=$(echo "$g" | grep -A1 "Current mode" | grep -m1 -oE "[0-9]+x[0-9]+@[0-9.]+")
+    echo "GNOME:      ${mon:-no monitors - RDP cannot show a screen}${mode:+ at $mode}"
+}
+
+[ "$(id -u)" = 0 ] || die "run as root"
+case "${1:-}" in
+    on) do_on ;;
+    off) do_off ;;
+    status) do_status ;;
+    *) echo "usage: $MARK on|off|status" >&2; exit 2 ;;
+esac

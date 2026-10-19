@@ -5,6 +5,8 @@ GRUB_DISABLE_SUBMENU=true
 GRUB_TERMINAL_OUTPUT="console"
 # 2026-10-06: pci-stub hides the onboard analog audio 1022:15e3 - the USB DAC is the only sound card
 # 2026-10-13: amdgpu.dcfeaturemask=0x402 = default 0x2 + 0x400 HDMI 2.1 FRL (off by default in kernel 7.2)
+# 2026-10-19: drm.edid_firmware= and video= (TV kept "connected" for RDP) are not here on purpose:
+#             atrium-hdmi-keep on/off adds and removes them itself (install, step 19)
 GRUB_CMDLINE_LINUX="rhgb quiet pci-stub.ids=1022:15e3 efi_pstore.pstore_disable=0 amdgpu.ppfeaturemask=0xfff73fff amdgpu.dcfeaturemask=0x402"
 GRUB_DISABLE_RECOVERY="true"
 GRUB_ENABLE_BLSCFG=true

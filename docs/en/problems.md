@@ -78,6 +78,28 @@ the shield once:
 runuser -u view -- env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus gdbus call --session --dest org.gnome.ScreenSaver --object-path /org/gnome/ScreenSaver --method org.gnome.ScreenSaver.SetActive false
 ```
 
+The screen is blanked, RDP still does not connect, and the TV is on another input — that is the next section.
+
+## RDP does not connect while the TV is on another input or unpowered
+
+**Symptom.** The TV has been on another input for a long time (a PS5 in our case) or is unplugged from the
+mains. The box is alive over SSH, the network and the firewall are fine, but RDP from the computer does not
+connect. In the journal, `journalctl -t gnome-remote-desktop-daemon` shows `Failed to record monitor:
+GDBus.Error:…: Unknown monitor` on every attempt; `cat /sys/class/drm/card*-HDMI-A-1/status` → `disconnected`;
+`gdctl show` as `view` lists no monitors. A TV in standby on the box's input does not do this: it keeps
+answering, and RDP works.
+
+**Cause.** Our RDP is screen sharing: it can only show a screen GNOME has. A TV left on another input for
+long stops answering on the box's input; the driver reports the output as disconnected, GNOME is left
+without a single screen, and there is nothing to show.
+
+**Quick fix.** Switch the TV to the box's input or turn it on — RDP works right away.
+
+**For good.** `atrium-hdmi-keep on` + reboot: the output always counts as connected, the kernel takes the
+display description from a file saved from the TV, and GNOME never loses the monitor. What it is, who needs
+it and what to keep in mind — [installation, step 19](install.md); check with `atrium-hdmi-keep status`. On
+since 19.10 in our case.
+
 ## GNOME crashed with RDP connected
 
 **Cause.** A bug in mutter 50.5 (SIGSEGV): a display connection event arrived while the screen was being

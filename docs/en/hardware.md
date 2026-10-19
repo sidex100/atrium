@@ -78,6 +78,11 @@ Chrontel CH7218 flashing) — see [tv-output.md](tv-output.md).
 
 The box's own HDMI has no CEC in Linux: CEC used to come from the chip in the active cable.
 
+Two inputs of the TV are in use — the box and a PS5. When the TV sits on the PS5 for a long time, it stops
+answering on the box's input, and left alone the box lost its only screen (RDP did not connect). That is why
+our output always counts as connected and the kernel takes the display description from a file saved from
+the TV: `atrium-hdmi-keep` ([installation, step 19](install.md)). With one active TV input it is not needed.
+
 ## LG OLED C3 TV
 
 | Setting | Value | Why |

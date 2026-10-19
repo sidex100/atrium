@@ -58,7 +58,8 @@ Inside it is a full Linux server that runs around the clock.
 - **Windows share** without passwords: `\\atrium.lan\media`, visible in Network.
 - **Control.**
   - from a phone: touchpad and keyboard, types Cyrillic and any symbols;
-  - RDP from a PC: the same screen;
+  - RDP from a PC: the same screen — also while the TV is on another input or unpowered
+    (`atrium-hdmi-keep`, optional);
   - SSH; DualSense and Xbox gamepads; an on-screen keyboard.
 - **Apple Aerial screensaver.** After 15 minutes idle — Apple's 4K clips (cities, nature, the ISS, the
   ocean), after 30 minutes the screen turns off. Any touch brings everything back. It never interrupts a
@@ -213,7 +214,8 @@ What is **not** here:
 - **Общая папка для Windows** без паролей: `\\atrium.lan\media`, видна в «Сети».
 - **Управление.**
   - с телефона: тачпад и клавиатура, печатает и кириллицу, и любые символы;
-  - RDP с компьютера: тот же экран;
+  - RDP с компьютера: тот же экран — и когда ТВ на другом входе или обесточен
+    (`atrium-hdmi-keep`, по желанию);
   - SSH; геймпады DualSense и Xbox; экранная клавиатура.
 - **Заставка Apple Aerial.** Через 15 минут простоя — ролики Apple в 4K (города, природа, МКС, океан),
   через 30 минут экран гаснет. Любое касание возвращает всё обратно. Пока идёт фильм, заставка не мешает.

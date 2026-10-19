@@ -79,6 +79,7 @@ hold 4K 120 Hz.
 | 12.10 | The CH7218 cable reflashed with **UGREEN 07.00.54** firmware | CEC appeared, the picture came back after a short screen blank |
 | 13.10 | A night with the screen blanked | in the morning, after moving the mouse — "No signal". From the box's side everything was alive: the frame, the DisplayPort link, the TV's EDID. Only unplugging and replugging the cable helped. Both active cables got warm **while idle**: when it blanks the screen, the driver puts the cable chip to sleep (DPCD `0x600 = 02`), and after a long sleep the chip did not bring HDMI back up. We tried workarounds: a software unplug/replug (`trigger_hotplug`), turning the TV off over CEC |
 | 13.10 | Looking for why HDMI is "2.0" | found HDMI 2.1 FRL in kernel 7.2, disabled by default. `amdgpu.dcfeaturemask=0x402` → the box's own HDMI: 4K 120 Hz, RGB 4:4:4, 10-bit, HDR, no DSC and no active cable |
+| 19.10 | The TV on the PS5 input for a day | the TV stopped answering on the box's input, GNOME was left without a screen, RDP did not connect. `atrium-hdmi-keep on`: the output always "connected", the EDID from a file — RDP works whatever input the TV is on (below) |
 
 ## What we gained and what we lost
 
@@ -96,6 +97,23 @@ hold 4K 120 Hz.
 
 **Not yet (waiting for kernel 7.4):** VRR (FreeSync) and ALLM over HDMI. There was no VRR through the
 active cables either.
+
+## The TV on another input: HDMI always "connected"
+
+Since 19.10 `atrium-hdmi-keep` is on: the box's output always counts as connected (`video=HDMI-A-1:e`),
+and the kernel takes the display description from a file saved from the TV
+(`drm.edid_firmware=HDMI-A-1:edid/atrium-tv.bin`). Why: a TV switched to the PS5 for a long time stops
+answering on the box's input, GNOME is left without a single screen, and RDP does not connect — exactly
+when it is needed. With keep, GNOME never loses the monitor: the same LG, 4K 120 Hz, HDR. When the TV
+comes back, the kernel trains the HDMI 2.1 link again and sets the current mode; the picture appears by
+itself. Checked on 19.10: the cable unplugged from the TV — RDP works, plugged back — 4K 120 is back. Who
+needs it (not everyone), how to turn it on, off and check it — [installation, step 19](install.md); the
+symptoms without it — [known problems](problems.md).
+
+With keep, the output `status` in `/sys/class/drm` is always `connected`, and `edid` is the file itself.
+Whether the TV really receives shows in the FRL table of the driver log (`atrium-hdmi-keep status`, the
+`HDMI link` line): while the TV receives, the link is trained; a TV in standby drops it after a few minutes
+and trains it again when turned on.
 
 ## Fallback: an active DisplayPort → HDMI 2.1 cable
 

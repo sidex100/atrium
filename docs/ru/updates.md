@@ -102,6 +102,13 @@ find /etc -name '*.rpmnew' -o -name '*.rpmsave'
 11. **Авто-HDR** (`atrium-hdr`, `auto-hdr.lua`) опирается на `gdctl` и свойство `color-mode` в D-Bus
     DisplayConfig — это GNOME. После обновления GNOME проверь от `view`: `atrium-hdr status` отвечает `sdr`,
     а HDR-фильм в mpv включает и выключает HDR.
+12. **`atrium-hdmi-keep`** (если включён, [установка, шаг 19](install.md)): параметры `drm.edid_firmware=`
+    и `video=` новые ядра берут из `/etc/kernel/cmdline`, а файл с описанием экрана
+    `/usr/lib/firmware/edid/atrium-tv.bin` попадает в initramfs каждого нового ядра через
+    `/etc/dracut.conf.d/90-atrium-hdmi-keep.conf` — всё само, при установке ядра. Что может сломать:
+    (а) ядро переименует параметр или перестанет понимать `video=…:e` — тогда в `status` строка `kernel
+    log: 0 x 'forcing …'`; (б) ты поменял ТВ или его настройку, меняющую EDID, — файл устарел, пересохранить:
+    `off`, перезагрузка, `on`, перезагрузка. После обновления ядра — `atrium-hdmi-keep status`.
 
 ## Проверка после обновления
 
@@ -115,11 +122,13 @@ cat /sys/kernel/debug/dri/0000:05:00.0/amdgpu_dm_dtn_log | sed -n '/^HPO:/,/^$/p
 aplay -l | grep ^card
 find /etc -name '*.rpmnew' -o -name '*.rpmsave'
 rpm -V urserver | grep remotes
+atrium-hdmi-keep status
 ```
 
 Ожидаемо:
 
-- четыре наших параметра ядра на месте;
+- четыре наших параметра ядра на месте (шесть, если включён `atrium-hdmi-keep`: тогда в его `status` —
+  `configured: on`, `active now: on`, в initramfs 1 копия файла);
 - нет упавших служб;
 - все расширения `ACTIVE`;
 - профили VA-API есть;

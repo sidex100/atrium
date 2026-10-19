@@ -105,6 +105,13 @@ Packages do not touch our own files, but new versions of programs may fail to "u
 11. **Auto HDR** (`atrium-hdr`, `auto-hdr.lua`) relies on `gdctl` and the `color-mode` property of the
     DisplayConfig D-Bus interface — that is GNOME. After a GNOME update, check as `view`: `atrium-hdr status`
     answers `sdr`, and an HDR film in mpv turns HDR on and off.
+12. **`atrium-hdmi-keep`** (if it is on, [installation, step 19](install.md)): new kernels take the
+    `drm.edid_firmware=` and `video=` parameters from `/etc/kernel/cmdline`, and the display description file
+    `/usr/lib/firmware/edid/atrium-tv.bin` gets into the initramfs of every new kernel through
+    `/etc/dracut.conf.d/90-atrium-hdmi-keep.conf` — all by itself when a kernel is installed. What can break
+    it: (a) the kernel renames the parameter or stops understanding `video=…:e` — then `status` shows `kernel
+    log: 0 x 'forcing …'`; (b) you changed the TV or a TV setting that changes the EDID — the file is stale,
+    save it again: `off`, reboot, `on`, reboot. After a kernel update — `atrium-hdmi-keep status`.
 
 ## Checking after an update
 
@@ -118,11 +125,13 @@ cat /sys/kernel/debug/dri/0000:05:00.0/amdgpu_dm_dtn_log | sed -n '/^HPO:/,/^$/p
 aplay -l | grep ^card
 find /etc -name '*.rpmnew' -o -name '*.rpmsave'
 rpm -V urserver | grep remotes
+atrium-hdmi-keep status
 ```
 
 Expected:
 
-- our four kernel parameters are in place;
+- our four kernel parameters are in place (six if `atrium-hdmi-keep` is on: its `status` then shows
+  `configured: on`, `active now: on`, 1 copy of the file in the initramfs);
 - no failed services;
 - all extensions are `ACTIVE`;
 - VA-API profiles are present;

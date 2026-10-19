@@ -490,6 +490,9 @@ The changes touch three places:
 
 They take effect after a reboot (step 18). Then `aplay -l` shows only the DAC.
 
+Two more kernel parameters (`drm.edid_firmware=` and `video=`) are deliberately absent from
+`rootfs/etc/default/grub`: `atrium-hdmi-keep` adds and removes them in step 19, and not everyone needs it.
+
 ## 13. Torrents and the shared folder
 
 **Transmission.** The daemon always runs as a service and downloads into `/srv/download` by itself. A
@@ -620,6 +623,10 @@ r="rule family=\"ipv4\" source address=\"$L\" service name=\"rdp\" accept"; fire
 English layout.** If you erase Cyrillic with Backspace, fragments of bytes stay in the password, and
 `grdctl` still reports success.
 
+RDP shows only the screen GNOME has. A TV in standby does not take the screen away, but a TV switched to
+another input for a long time (a PS5 in our case) or unpowered does, and RDP does not connect. If several
+inputs of your TV are in use, step 19, the very last one, covers this.
+
 ## 15. Games
 
 **What we install.**
@@ -747,5 +754,80 @@ Expected:
 - nine extensions ACTIVE;
 - all services active;
 - watchdog in state `active`.
+
+The installation ends here. Step 19 is optional, and only after everything else has been checked.
+
+## 19. HDMI always "connected": RDP while the TV is on another input (optional, the very last step)
+
+**Who needs this.** Most likely not you. Our RDP is screen sharing (step 14): it can only show a screen
+GNOME has. If one input of the TV is in use, nothing needs to be done: a TV in standby still answers the
+box, GNOME keeps the screen, RDP works. On our TV two inputs are in daily use — the box and a PS5. When
+the TV sits on the PS5 for a long time (or is unpowered), it stops answering on the box's input, GNOME is
+left without a single screen, and RDP fails: the journal shows `Failed to record monitor: Unknown monitor`.
+And that is exactly when RDP is needed — to fix something at night while someone is playing. Do this step
+only if your situation is the same, and **at the very end**, once the TV, the cable and GNOME are set up and
+checked: the step freezes the display description, and whatever you change on the TV afterwards the box will
+not see right away (below).
+
+**How it works.** Two kernel parameters, no services in the background:
+
+- `video=HDMI-A-1:e` — the output always counts as connected, whatever happens on the cable;
+- `drm.edid_firmware=HDMI-A-1:edid/atrium-tv.bin` — the kernel takes the display description (EDID) from a
+  file saved from the TV instead of asking the TV.
+
+For GNOME the monitor then never changes: the same LG, the same modes, 4K 120 Hz, HDR. The file also goes
+into the initramfs (the snippet `/etc/dracut.conf.d/90-atrium-hdmi-keep.conf`), because the GPU driver loads
+from there. This is the kernel's own, documented machinery (kernel docs: `admin-guide/edid.rst` and
+`fb/modedb.rst`), used for exactly this case — KVM switches, a TV on another input, headless machines. While
+the TV does not receive, the box drives the signal into an empty port — that is fine. When the TV comes
+back, the kernel sets the current mode again in full, HDR included if it was on.
+
+**The `atrium-hdmi-keep` script** (as root) does everything:
+
+- `atrium-hdmi-keep on` — reads the display description from the TV (the TV must be on the box's input; in
+  standby it still gives the full one), validates it, stores the file, rebuilds the initramfs of every kernel
+  (about a minute), adds the kernel parameters through `grubby`, to `/etc/kernel/cmdline` and to
+  `/etc/default/grub`;
+- `atrium-hdmi-keep off` — removes the parameters, the file and the snippet, rebuilds the initramfs. Back
+  to how it was: the TV is detected the usual way, RDP works while the TV is on the box's input or in standby;
+- `atrium-hdmi-keep status` — configured or not, whether it is active in the running kernel (if not —
+  "reboot pending"), the saved file (TV model, blocks, checksums), whether it is in the initramfs, the output
+  state, whether the HDMI 2.1 (FRL) link is trained, and which monitor GNOME sees.
+
+`on` and `off` take effect after a reboot.
+
+```bash
+R=/root/atrium/rootfs
+install -m 755 $R/usr/local/bin/atrium-hdmi-keep /usr/local/bin/atrium-hdmi-keep && restorecon /usr/local/bin/atrium-hdmi-keep
+atrium-hdmi-keep on
+reboot
+```
+
+After the reboot:
+
+```bash
+atrium-hdmi-keep status
+```
+
+Expected: `configured: on`, `active now: on`, 1 copy of the file in the initramfs, `GNOME: Monitor HDMI-1 …
+at 3840x2160@120`. Then check by hand: unplug the HDMI from the TV — `status` still shows the monitor and RDP
+from the computer connects; plug it back — the picture comes back by itself.
+
+**Keep in mind:**
+
+- with keep on, the output `status` is always `connected`, and the EDID is the file itself. Whether the TV is
+  really there shows in the `HDMI link` line: while the TV receives, the HDMI 2.1 (FRL) link is trained; a TV
+  in standby drops it after a few minutes and trains it again when turned on — that is normal;
+- **the display description is frozen.** Another TV or monitor, a TV setting that changes the EDID (Deep
+  Colour on the input, a TV firmware update) — the box will not see it. To save it again: `off`, reboot, `on`,
+  reboot. While keep is active the kernel never asks the TV for the EDID, so `on` without turning it off saves
+  the same file;
+- GNOME no longer gets "TV gone / TV back" events. Nothing of ours depends on them, and the `monitor null`
+  errors of the disk widget go away. The screensaver, screen blanking, auto HDR and the brightness slider
+  work as before: all of them are commands to GNOME and the kernel, the TV only receives the signal;
+- new kernels get both the parameters (from `/etc/kernel/cmdline`) and the file in the initramfs (the
+  dracut snippet) on their own; after an update — `atrium-hdmi-keep status` ([updates.md](updates.md));
+- `rootfs/etc/default/grub` deliberately does not contain these parameters — the script adds and removes
+  them itself.
 
 Next — [updates and what to check after them](updates.md).
