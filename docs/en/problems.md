@@ -265,3 +265,13 @@ it is back to 100 %. The `atrium-brightness-value` extension shows the exact val
 **Cause.** In Transmission 4.1 the `utp-enabled: false` setting is overridden by the
 `preferred_transports` list. **Fix:** `"preferred_transports": ["tcp"]`, already in the repository's
 `settings.json`. `settings.json` is edited only while the service is stopped.
+
+## dnf: "Skipping packages with broken dependencies: mesa-va-drivers-freeworld"
+
+**Symptom.** `dnf update` prints `Problem: … nothing provides mesa-filesystem(x86-64) = X needed by
+mesa-va-drivers-freeworld-X …`, the package lands in `Skipping`, everything else updates (or "Nothing to do").
+
+**Cause.** Not an error and not our configuration: RPM Fusion has published freeworld for the new mesa, while
+Fedora still keeps that mesa in testing (5–7 days). The pair on the box stays as it is and keeps working.
+**Fix:** do nothing, in a week both halves install together; do not touch `--allowerasing`. Details and how to
+check the timing — [updates](updates.md), rule 2. We had this on 19–21.10 with mesa 26.2.5.

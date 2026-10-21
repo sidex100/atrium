@@ -21,9 +21,21 @@ Three rules:
 
 1. **`dnf remove` — first with `--assumeno`.** dnf also removes "orphaned" dependencies. That is how the
    file manager and `tuned` were once lost.
-2. **Never `--allowerasing`.** If dnf says it is skipping mesa because of `mesa-va-drivers-freeworld`,
-   RPM Fusion has not yet built the driver for the new mesa. Wait a day or two. With `--allowerasing` dnf
-   will remove the driver, and video will be decoded by the CPU.
+2. **Never `--allowerasing`.** Every few weeks `dnf update` prints
+   `Problem: … nothing provides mesa-filesystem(x86-64) = X needed by mesa-va-drivers-freeworld-X …` and below
+   it `Skipping packages with broken dependencies: mesa-va-drivers-freeworld`. **This is a notice, not an
+   error:** the transaction goes through, everything else is installed, and video keeps working on the current
+   mesa and freeworld pair. The cause is two halves of one driver from two repositories: freeworld loads the
+   Mesa core from a file with the version in its name (`libgallium-26.2.4.so`) and must match it exactly, so
+   RPM Fusion requires the same `mesa-filesystem` version. It builds against the mesa from Fedora
+   **updates-testing** and publishes right away, while Fedora keeps mesa in testing for 5–7 days — that window
+   is the "Skipping". Do nothing: in a week `dnf update` installs both halves together. Where mesa is right now
+   (`testing` or `stable`, since which date):
+   ```bash
+   curl -s -H 'Accept: application/json' 'https://bodhi.fedoraproject.org/updates/?packages=mesa&releases=F44&rows_per_page=3' | python3 -c "import sys,json; [print(u['title'], u['status'], 'testing', (u.get('date_testing') or '-')[:10], 'stable', (u.get('date_stable') or '-')[:10]) for u in json.load(sys.stdin)['updates']]"
+   ```
+   The opposite case — Fedora has published mesa but freeworld is not there yet — looks like mesa itself being
+   skipped; wait the same way. With `--allowerasing` dnf removes freeworld, and video is decoded by the CPU.
 3. After a kernel, mesa or GNOME update — reboot and check (below).
 
 ## What packages overwrite

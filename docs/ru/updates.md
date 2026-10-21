@@ -21,9 +21,20 @@ gnome-software и PackageKit **не установлены**, поэтому н�
 
 1. **`dnf remove` — сначала с `--assumeno`.** dnf удаляет и «осиротевшие» зависимости. Так однажды ушли
    файловый менеджер и `tuned`.
-2. **Никогда `--allowerasing`.** Если dnf пишет, что пропускает mesa из-за `mesa-va-drivers-freeworld`,
-   значит RPM Fusion ещё не собрал драйвер под новую mesa. Подожди день-два. С `--allowerasing` dnf удалит
-   драйвер, и видео станет декодировать процессор.
+2. **Никогда `--allowerasing`.** Раз в несколько недель `dnf update` пишет
+   `Problem: … nothing provides mesa-filesystem(x86-64) = X needed by mesa-va-drivers-freeworld-X …` и ниже
+   `Skipping packages with broken dependencies: mesa-va-drivers-freeworld`. **Это уведомление, не ошибка:**
+   транзакция проходит, всё остальное ставится, видео работает на прежней паре mesa и freeworld. Причина —
+   две половины одного драйвера из двух репозиториев: freeworld грузит ядро Mesa из файла с версией в имени
+   (`libgallium-26.2.4.so`) и обязан совпадать с ним точно, поэтому RPM Fusion требует ту же версию
+   `mesa-filesystem`. Собирает он против mesa из Fedora **updates-testing** и выкладывает сразу, а Fedora держит
+   mesa в testing 5–7 дней — это окно и есть «Skipping». Ничего не делать: через неделю `dnf update` поставит
+   обе половины вместе. Где mesa сейчас (`testing` или `stable`, с какого числа):
+   ```bash
+   curl -s -H 'Accept: application/json' 'https://bodhi.fedoraproject.org/updates/?packages=mesa&releases=F44&rows_per_page=3' | python3 -c "import sys,json; [print(u['title'], u['status'], 'testing', (u.get('date_testing') or '-')[:10], 'stable', (u.get('date_stable') or '-')[:10]) for u in json.load(sys.stdin)['updates']]"
+   ```
+   Обратный случай — Fedora выложила mesa, а freeworld ещё нет — выглядит как пропуск самой mesa; ждать так
+   же. С `--allowerasing` dnf удалит freeworld, и видео станет декодировать процессор.
 3. После обновления ядра, mesa или GNOME — перезагрузка и проверка (ниже).
 
 ## Что пакеты перезаписывают

@@ -255,3 +255,13 @@ gnome-remote-desktop-daemon` при каждой попытке `Failed to recor
 **Причина.** В Transmission 4.1 настройка `utp-enabled: false` перекрывается списком
 `preferred_transports`. **Решение:** `"preferred_transports": ["tcp"]`, уже в `settings.json` репозитория.
 `settings.json` правят только при остановленной службе.
+
+## dnf: «Skipping packages with broken dependencies: mesa-va-drivers-freeworld»
+
+**Признак.** `dnf update` пишет `Problem: … nothing provides mesa-filesystem(x86-64) = X needed by
+mesa-va-drivers-freeworld-X …`, пакет попадает в `Skipping`, остальное обновляется (или «Nothing to do»).
+
+**Причина.** Не ошибка и не наша настройка: RPM Fusion выложил freeworld под новую mesa, а Fedora ту же mesa ещё
+держит в testing (5–7 дней). Пара на боксе остаётся прежней и работает. **Решение:** ничего не делать, через
+неделю обе половины встанут вместе; `--allowerasing` не трогать. Подробно и как посмотреть сроки —
+[обновления](updates.md), правило 2. У нас так было 19–21.10 с mesa 26.2.5.
