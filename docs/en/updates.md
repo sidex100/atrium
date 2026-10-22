@@ -134,7 +134,7 @@ systemctl --failed; systemctl --user -M view@ --failed
 $V gnome-extensions list --enabled --details | grep -E "^[a-z]|State"
 vainfo --display drm 2>&1 | grep -E "VAProfile(H264|HEVC|AV1)" | head -4
 cat /sys/kernel/debug/dri/0000:05:00.0/amdgpu_dm_dtn_log | sed -n '/^HPO:/,/^$/p'
-aplay -l | grep ^card
+cat /proc/asound/cards
 find /etc -name '*.rpmnew' -o -name '*.rpmsave'
 rpm -V urserver | grep remotes
 atrium-hdmi-keep status
@@ -147,7 +147,7 @@ Expected:
 - no failed services;
 - all extensions are `ACTIVE`;
 - VA-API profiles are present;
-- `aplay -l` shows one DAC;
+- `/proc/asound/cards` shows one DAC;
 - `rpm -V urserver` shows 5 modified remotes: this means the patch is in place.
 
 ## Restoring the Unified Remote patch

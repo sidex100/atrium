@@ -488,7 +488,7 @@ The changes touch three places:
 - `/etc/kernel/cmdline` — kernels that future updates will install;
 - `/etc/default/grub` — rebuilds of the boot menu.
 
-They take effect after a reboot (step 18). Then `aplay -l` shows only the DAC.
+They take effect after a reboot (step 18). Then `cat /proc/asound/cards` shows only the DAC.
 
 Two more kernel parameters (`drm.edid_firmware=` and `video=`) are deliberately absent from
 `rootfs/etc/default/grub`: `atrium-hdmi-keep` adds and removes them in step 19, and not everyone needs it.
@@ -735,7 +735,7 @@ value is 100 %; we keep it at about 110 %. Each time HDR turns on, the slider go
 ```bash
 V="runuser -u view -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
 systemctl --failed; systemctl --user -M view@ --failed
-cat /proc/cmdline; aplay -l | grep ^card
+cat /proc/cmdline; cat /proc/asound/cards
 findmnt /srv; ls -ldZ /srv
 vainfo --display drm 2>&1 | grep -c VAProfile
 $V gnome-extensions list --enabled --details | grep -cE "State: ACTIVE"
@@ -748,7 +748,7 @@ Expected:
 
 - no failed services;
 - `/proc/cmdline` contains our four parameters;
-- `aplay -l` shows one DAC;
+- `/proc/asound/cards` shows one DAC;
 - `/srv` is mounted;
 - more than ten VA-API profiles;
 - nine extensions ACTIVE;

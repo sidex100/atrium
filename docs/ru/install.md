@@ -479,7 +479,7 @@ grubby --info=ALL | grep -E "^args"; cat /etc/kernel/cmdline 2>/dev/null
 - `/etc/kernel/cmdline` — ядра, которые поставятся при обновлениях;
 - `/etc/default/grub` — пересборку меню загрузки.
 
-Подействует после перезагрузки (шаг 18). Тогда `aplay -l` покажет только ЦАП.
+Подействует после перезагрузки (шаг 18). Тогда `cat /proc/asound/cards` покажет только ЦАП.
 
 Ещё два параметра ядра (`drm.edid_firmware=` и `video=`) в `rootfs/etc/default/grub` намеренно отсутствуют:
 их добавляет и убирает `atrium-hdmi-keep` на шаге 19, и нужен он не всем.
@@ -718,7 +718,7 @@ reboot
 ```bash
 V="runuser -u view -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
 systemctl --failed; systemctl --user -M view@ --failed
-cat /proc/cmdline; aplay -l | grep ^card
+cat /proc/cmdline; cat /proc/asound/cards
 findmnt /srv; ls -ldZ /srv
 vainfo --display drm 2>&1 | grep -c VAProfile
 $V gnome-extensions list --enabled --details | grep -cE "State: ACTIVE"
@@ -731,7 +731,7 @@ cat /sys/class/watchdog/watchdog0/state
 
 - нет упавших служб;
 - в `/proc/cmdline` есть четыре наших параметра;
-- в `aplay -l` один ЦАП;
+- в `/proc/asound/cards` один ЦАП;
 - `/srv` смонтирован;
 - профилей VA-API больше десятка;
 - девять расширений ACTIVE;

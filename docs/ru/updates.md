@@ -130,7 +130,7 @@ systemctl --failed; systemctl --user -M view@ --failed
 $V gnome-extensions list --enabled --details | grep -E "^[a-z]|State"
 vainfo --display drm 2>&1 | grep -E "VAProfile(H264|HEVC|AV1)" | head -4
 cat /sys/kernel/debug/dri/0000:05:00.0/amdgpu_dm_dtn_log | sed -n '/^HPO:/,/^$/p'
-aplay -l | grep ^card
+cat /proc/asound/cards
 find /etc -name '*.rpmnew' -o -name '*.rpmsave'
 rpm -V urserver | grep remotes
 atrium-hdmi-keep status
@@ -143,7 +143,7 @@ atrium-hdmi-keep status
 - нет упавших служб;
 - все расширения `ACTIVE`;
 - профили VA-API есть;
-- в `aplay -l` один ЦАП;
+- в `/proc/asound/cards` один ЦАП;
 - `rpm -V urserver` показывает 5 изменённых пультов: значит, патч стоит.
 
 ## Вернуть патч Unified Remote
