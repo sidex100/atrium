@@ -1,0 +1,203 @@
+#!/bin/bash
+# atrium-boot-notify: mail when atrium goes down and a report after it has come back up (made from apex-boot-notify).
+#   shutdown - mail "REBOOT/POWEROFF: going down" + the reason (atrium-shutdown-notify.service ExecStop: runs while
+#              the system goes down, before postfix and the network stop). A reboot by atrium-update gets no
+#              mail here: its report already said so (/run/atrium-update.reboot), only the reason is recorded.
+#   boot     - report after boot (atrium-boot-notify.timer, 60 s; waits until systemd has no more start jobs and
+#              the GNOME session of the TV user is up): was the previous shutdown clean and why (wtmp, pstore,
+#              reset reason of the CPU), our checks (atrium-check boot), network
+#   test     - every kind of mail marked (TEST): going down, BOOT: OK (real report), BOOT: PROBLEMS (real report +
+#              a sample problem); nothing is recorded
+# Clean shutdown = wtmp has a "shutdown" record after the previous boot (systemd writes it at every normal
+# shutdown); a freeze, kernel panic, power loss or hard reset leaves none. Our marker adds the reason.
+# Installed as /usr/local/sbin/atrium-boot-notify. State in /var/lib/atrium-boot-notify/. ASCII only.
+# 2026-10-31: created (user: mail at every start and restart)
+set -u
+STATE_DIR=/var/lib/atrium-boot-notify
+MARK=$STATE_DIR/last-shutdown
+REBOOT_FLAG=/run/atrium-update.reboot
+VIEW=view
+VUID=$(id -u "$VIEW" 2>/dev/null || echo 1000)
+V=(runuser -u "$VIEW" -- env "XDG_RUNTIME_DIR=/run/user/$VUID" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$VUID/bus")
+TAG="[$(hostname -s)]"
+FQDN=$(hostname -f)
+TEST=""                                     # " (TEST)" in test mode
+
+send() {                                    # $1 subject without the tag, $2 body
+    local body=$2
+    [ -n "$TEST" ] && body="TEST: a sample of this mail, nothing has happened.
+
+$body"
+    if [ -x /usr/local/sbin/atrium-mail ]; then
+        printf '%s\n' "$body" | /usr/local/sbin/atrium-mail -u atrium-boot-notify -s "$TAG $1$TEST"
+    else
+        printf 'Subject: %s\n\n%s\n' "$TAG $1$TEST" "$body" | /usr/sbin/sendmail -oi root
+    fi
+}
+utc() { date -u -d "@$1" '+%Y-%m-%d %H:%M:%S UTC'; }
+dur() { local s=$1; printf '%dd %02dh %02dm' $((s / 86400)) $((s % 86400 / 3600)) $((s % 3600 / 60)); }
+add() { REPORT="$REPORT$(printf '%-15s %s' "$1:" "$2")"$'\n'; }   # "Key: value", aligned as atrium-check
+warn() { WARN="$WARN${WARN:+; }$1"; }
+
+first_run=0
+[ -d "$STATE_DIR" ] || { mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR"; first_run=1; }
+
+# ---------------------------------------------------------------- going down
+
+shutdown_type() {
+    case "$(systemctl list-jobs --no-legend 2>/dev/null)" in
+        *reboot.target*|*kexec.target*) echo REBOOT ;;
+        *poweroff.target*)              echo POWEROFF ;;
+        *halt.target*)                  echo HALT ;;
+        *)                              echo "" ;;
+    esac
+}
+
+shutdown_reason() {
+    local log
+    if [ -r "$REBOOT_FLAG" ]; then
+        echo "atrium-update: $(head -1 "$REBOOT_FLAG")"
+        return
+    fi
+    log=$(journalctl -b --since -5min -o cat --no-pager -u systemd-logind 2>/dev/null)
+    if printf '%s\n' "$log" | grep -qiE 'power key|power button'; then
+        echo "power button"
+    elif printf '%s\n' "$log" | grep -qiE 'system is (rebooting|powering down|halting)'; then
+        echo "command or menu (systemctl reboot / poweroff, GNOME menu)"
+    else
+        echo "unknown (not requested through logind)"
+    fi
+}
+
+going_down() {
+    local test=$1 type reason now up who i
+    type=$(shutdown_type)
+    if [ "$test" = 1 ]; then
+        type=${type:-REBOOT}
+    elif [ -z "$type" ]; then
+        exit 0                              # the unit was stopped by hand, the system is not going down
+    fi
+    reason=$(shutdown_reason)
+    now=$(date -u +%s)
+    [ "$test" = 1 ] || printf '%s|%s|%s\n' "$now" "$type" "$reason" > "$MARK"
+    [ "$test" != 1 ] && [ -r "$REBOOT_FLAG" ] && exit 0   # atrium-update has mailed already
+    up=$(( now - $(date -u -d "$(uptime -s)" +%s) ))
+    who=$(who 2>/dev/null | awk '{printf "%s%s %s", (n++ ? ", " : ""), $1, $2}')
+    send "$type: $FQDN is going down" "$FQDN is going down: $type
+
+Time:       $(utc "$now")
+Uptime:     $(dur "$up") (up since $(uptime -s) UTC)
+Reason:     $reason
+Logged in:  ${who:-nobody}
+
+A report follows about a minute after the box is back up."
+    for i in $(seq 1 30); do                # we stop before postfix: give it 30 s to hand the mail over
+        [ -z "$(postqueue -j 2>/dev/null)" ] && break
+        sleep 1
+    done
+}
+
+# ---------------------------------------------------------------- back up
+
+previous_shutdown() {                       # sets PREV (text), CLEAN (1/0), BY_UPDATE (1/0)
+    local boot=$1 w l2 l3 prev_start mt mtype mreason lastlog valid_mark=0
+    BY_UPDATE=0
+    w=$(last -x --time-format iso 2>/dev/null | awk '$1 == "reboot" || $1 == "shutdown" {print $1, $5}' | head -3)
+    l2=$(printf '%s\n' "$w" | sed -n 2p)    # "shutdown <time>" if the previous boot ended cleanly
+    l3=$(printf '%s\n' "$w" | sed -n 3p)
+    prev_start=$(date -u -d "${l3#* }" +%s 2>/dev/null || echo $(( boot - 30 * 86400 )))
+    if [ -r "$MARK" ]; then
+        IFS='|' read -r mt mtype mreason < "$MARK"
+        [ "${mt:-0}" -lt "$boot" ] && [ "${mt:-0}" -gt "$prev_start" ] && valid_mark=1
+    fi
+    if [ "$first_run" = 1 ]; then
+        CLEAN=1; PREV="unknown (first run of atrium-boot-notify)"
+    elif [ "$valid_mark" = 1 ]; then
+        CLEAN=1; PREV="clean $mtype at $(utc "$mt"), reason: $mreason"
+        case "$mreason" in atrium-update*) BY_UPDATE=1 ;; esac
+    elif [ "${l2%% *}" = shutdown ]; then
+        CLEAN=1; PREV="clean shutdown at ${l2#* } (reason not recorded)"
+    elif [ -z "$l2" ]; then
+        CLEAN=1; PREV="unknown (no earlier records in wtmp)"
+    else
+        CLEAN=0; PREV="NOT CLEAN: no shutdown record (freeze, kernel panic, power loss or hard reset)"
+        lastlog=$(journalctl -b -1 -n 1 -o short-iso --no-pager 2>/dev/null | tail -1 | cut -c1-25)
+        [ -n "$lastlog" ] && PREV="$PREV; last log line of the previous boot: $lastlog"
+    fi
+    [ -n "$TEST" ] || rm -f "$MARK"
+    if find /var/lib/systemd/pstore -type f -newermt "@$(( boot - 600 ))" 2>/dev/null | grep -q .; then
+        PREV="$PREV; kernel crash report saved in /var/lib/systemd/pstore"; CLEAN=0
+    fi
+}
+
+wait_session() {                            # max 90 s until every enabled GNOME extension of the TV user is ACTIVE
+    local i list
+    for i in $(seq 1 90); do
+        list=$("${V[@]}" gnome-extensions list --enabled --details 2>/dev/null)
+        [ -n "$list" ] && [ "$(grep -c '^[^ ]' <<< "$list")" = "$(grep -c 'State: ACTIVE' <<< "$list")" ] && return 0
+        sleep 1
+    done
+    return 1
+}
+
+check_network() {
+    local v4 gw dns
+    v4=$(ip -4 -br addr | awk '$1 != "lo" && $3 != "" {print $1 " " $3}' | paste -sd',' - | sed 's/,/, /g')
+    gw=$(ip -4 route show default | awk '{print $3; exit}')
+    add "IPv4" "${v4:-none}; default via ${gw:-NONE}"
+    if [ -z "$gw" ]; then
+        warn "no IPv4 default route"
+    elif ! ping -c 2 -W 2 "$gw" >/dev/null 2>&1; then
+        add "Gateway" "$gw does NOT answer ping"; warn "gateway $gw does not answer"
+    fi
+    dns=$(getent hosts fedoraproject.org | awk '{print $1; exit}')
+    if [ -n "$dns" ]; then add "DNS" "ok (fedoraproject.org -> $dns)"
+    else add "DNS" "FAILED to resolve fedoraproject.org"; warn "DNS does not resolve"; fi
+}
+
+back_up() {
+    local sample=${1:-} now boot subj i chk cprob all rr
+    for i in $(seq 1 60); do                # max 60 s until systemd has nothing else to start
+        [ "$(systemctl list-jobs --no-legend 2>/dev/null | grep -vc atrium-boot-notify)" = 0 ] && break
+        sleep 1
+    done
+    wait_session
+    now=$(date -u +%s)
+    boot=$(date -u -d "$(uptime -s)" +%s)
+    REPORT=""; WARN=""
+    previous_shutdown "$boot"
+    if [ "$sample" = problems ]; then
+        CLEAN=0; PREV="NOT CLEAN: no shutdown record (freeze, kernel panic, power loss or hard reset) - sample"
+        warn "sample.service failed - sample"
+    fi
+    rr=$(journalctl -k -b -o cat --no-pager 2>/dev/null | sed -n 's/.*Previous system reset reason \[[^]]*\]: //p' | head -1)
+    add "Booted" "$(utc "$boot") ($(dur $(( now - boot ))) ago)"
+    add "Previous" "$PREV"
+    [ -n "$rr" ] && add "Reset reason" "$rr"
+    add "Startup" "$(systemd-analyze time 2>/dev/null | head -1 | sed 's/^Startup finished in //')"
+    check_network
+    [ "$CLEAN" = 0 ] && warn "previous shutdown was NOT clean"
+    # atrium-check ends with its own "Problems:" line: one line for both, ours (shutdown, network) first
+    chk=$(/usr/local/sbin/atrium-check boot)
+    cprob=$(sed -n 's/^Problems: *//p' <<< "$chk"); [ "$cprob" = none ] && cprob=""
+    chk=$(grep -v '^Problems:' <<< "$chk")
+    all="$WARN${WARN:+${cprob:+; }}$cprob"
+    if [ -z "$all" ]; then
+        subj="BOOT: OK - $FQDN is up"
+    else
+        subj="BOOT: PROBLEMS - $FQDN is up"
+        [ "$CLEAN" = 0 ] && subj="$subj, previous shutdown NOT clean"
+    fi
+    [ "$BY_UPDATE" = 1 ] && subj="$subj after the update reboot"
+    send "$subj" "$FQDN has started.
+
+$REPORT$chk
+$(printf '%-15s %s' Problems: "${all:-none}")"
+}
+
+case "${1:-}" in
+    shutdown) going_down 0 ;;
+    test)     TEST=" (TEST)"; going_down 1; back_up; back_up problems ;;
+    boot)     back_up ;;
+    *) echo "usage: $0 shutdown|boot|test" >&2; exit 2 ;;
+esac

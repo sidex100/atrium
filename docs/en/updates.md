@@ -4,12 +4,15 @@
 
 ## How we update
 
-**Manually from the console only**, nothing automatic:
+**The box updates itself, once a day** — `atrium-update` ([install, step 20](install.md)): from 07:00,
+while nobody uses the box, it installs everything from the repositories and flatpak, checks with
+`atrium-check`, mails before and after, reboots when needed. Without step 20 — the same by hand from the
+console.
 
 | What | How it is updated |
 |---|---|
-| System and programs from repositories | `dnf upgrade`, then a reboot if the kernel, mesa or GNOME was updated |
-| Spotify, RetroDECK, Steam Link, Moonlight | `flatpak update` |
+| System and programs from repositories | `atrium-update` (`dnf update -y`) or by hand `dnf upgrade`; a reboot if the kernel, mesa or GNOME was updated |
+| Spotify, RetroDECK, Steam Link, Moonlight | `atrium-update` (`flatpak update -y`) or by hand `flatpak update` |
 | GNOME extensions in `/usr/local/share/gnome-shell/extensions` | never update by themselves; install a new version by hand, the same way as during installation |
 | Unified Remote | an RPM without a repository, `dnf` does not touch it; install a new version by hand, then apply the patch again (below) |
 | Windscribe | an RPM without a repository; a new stable version comes from GitHub (Windscribe/Desktop-App), check the sha256 from the release notes, `dnf install ./…rpm` |
@@ -36,7 +39,7 @@ Three rules:
    ```
    The opposite case — Fedora has published mesa but freeworld is not there yet — looks like mesa itself being
    skipped; wait the same way. With `--allowerasing` dnf removes freeworld, and video is decoded by the CPU.
-3. After a kernel, mesa or GNOME update — reboot and check (below).
+3. After a kernel, mesa or GNOME update — reboot and check (below). `atrium-update` does it by itself.
 
 ## What packages overwrite
 
@@ -126,6 +129,33 @@ Packages do not touch our own files, but new versions of programs may fail to "u
     save it again: `off`, reboot, `on`, reboot. After a kernel update — `atrium-hdmi-keep status`.
 
 ## Checking after an update
+
+All in one command — `atrium-check`. `atrium-update` runs it before a reboot and `atrium-boot-notify` after
+boot:
+
+```bash
+atrium-check        # after an update, before a reboot
+atrium-check boot   # after boot: also the kernel we booted with, and the TV output
+```
+
+What it checks:
+
+- our kernel parameters (four, six with `atrium-hdmi-keep`) — in `/etc/kernel/cmdline` and in every boot
+  entry; for the kernel of the next boot — the TV EDID in its initramfs when keep is on. The kernel of the
+  next boot is not ready — exit code 2, and `atrium-update` does not reboot;
+- no failed services — neither system ones nor in the TV session;
+- all GNOME extensions `ACTIVE`;
+- VA-API gives H.264, HEVC 10-bit and AV1, mesa and freeworld of the same version;
+- one sound card — the DAC;
+- no `.rpmnew` and `.rpmsave`;
+- our Chromium `master_preferences` and Firefox `policies.json` in place, both prefs still known to Firefox;
+- the copies of the Chrome and Chromium menu entries match the system ones except the Exec line;
+- Transmission settings: TCP only, no DHT and LPD, encryption required, stop after download;
+- the Unified Remote patch — 5 remotes;
+- our changes in `retroarch.cfg`;
+- with `boot`: the kernel booted with our parameters, the TV output (HDMI 2.1 FRL or "TV off").
+
+The last line is `Problems:  none` or a list. The same by hand:
 
 ```bash
 V="runuser -u view -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"

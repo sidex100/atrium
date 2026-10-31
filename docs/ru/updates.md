@@ -4,12 +4,14 @@
 
 ## Как обновляемся
 
-**Только вручную из консоли**, ничего автоматического:
+**Бокс обновляется сам, раз в сутки** — `atrium-update` ([установка, шаг 20](install.md)): с 07:00, пока
+боксом никто не пользуется, ставит всё из репозиториев и flatpak, проверяет `atrium-check`, пишет письма до
+и после, перезагружается, если нужно. Без шага 20 — то же самое руками из консоли.
 
 | Что | Как обновляется |
 |---|---|
-| Система и программы из репозиториев | `dnf upgrade`, потом перезагрузка, если обновилось ядро, mesa или GNOME |
-| Spotify, RetroDECK, Steam Link, Moonlight | `flatpak update` |
+| Система и программы из репозиториев | `atrium-update` (`dnf update -y`) или руками `dnf upgrade`; перезагрузка, если обновилось ядро, mesa или GNOME |
+| Spotify, RetroDECK, Steam Link, Moonlight | `atrium-update` (`flatpak update -y`) или руками `flatpak update` |
 | Расширения GNOME в `/usr/local/share/gnome-shell/extensions` | сами не обновляются никогда; новую версию ставим руками, как при установке |
 | Unified Remote | RPM без репозитория, `dnf` его не трогает; новая версия — вручную, потом заново патч (ниже) |
 | Windscribe | RPM без репозитория; новая стабильная версия — с GitHub (Windscribe/Desktop-App), сверить sha256 из описания релиза, `dnf install ./…rpm` |
@@ -35,7 +37,7 @@ gnome-software и PackageKit **не установлены**, поэтому н�
    ```
    Обратный случай — Fedora выложила mesa, а freeworld ещё нет — выглядит как пропуск самой mesa; ждать так
    же. С `--allowerasing` dnf удалит freeworld, и видео станет декодировать процессор.
-3. После обновления ядра, mesa или GNOME — перезагрузка и проверка (ниже).
+3. После обновления ядра, mesa или GNOME — перезагрузка и проверка (ниже). `atrium-update` делает это сам.
 
 ## Что пакеты перезаписывают
 
@@ -122,6 +124,33 @@ find /etc -name '*.rpmnew' -o -name '*.rpmsave'
     `off`, перезагрузка, `on`, перезагрузка. После обновления ядра — `atrium-hdmi-keep status`.
 
 ## Проверка после обновления
+
+Всё одной командой — `atrium-check`. Её же запускают `atrium-update` перед перезагрузкой и
+`atrium-boot-notify` после загрузки:
+
+```bash
+atrium-check        # после обновления, до перезагрузки
+atrium-check boot   # после загрузки: ещё ядро, с которым загрузились, и вывод на ТВ
+```
+
+Что проверяет:
+
+- наши параметры ядра (четыре, шесть с `atrium-hdmi-keep`) — в `/etc/kernel/cmdline` и во всех записях
+  загрузки; у ядра следующей загрузки — EDID ТВ в initramfs, если keep включён. Ядро следующей загрузки не
+  готово — код выхода 2, и `atrium-update` не перезагружается;
+- упавших служб нет — ни системных, ни в сеансе ТВ;
+- все расширения GNOME `ACTIVE`;
+- VA-API даёт H.264, HEVC 10-bit и AV1, mesa и freeworld одной версии;
+- звуковая карта одна — ЦАП;
+- нет `.rpmnew` и `.rpmsave`;
+- наши `master_preferences` Chromium и `policies.json` Firefox на месте, оба префа ещё есть в Firefox;
+- копии ярлыков Chrome и Chromium совпадают с системными, кроме строки Exec;
+- настройки Transmission: только TCP, без DHT и LPD, шифрование обязательно, остановка после закачки;
+- патч Unified Remote — 5 пультов;
+- наши правки в `retroarch.cfg`;
+- с `boot`: ядро загружено с нашими параметрами, вывод на ТВ (HDMI 2.1 FRL или «ТВ выключен»).
+
+Последняя строка — `Problems:  none` или список. То же самое руками:
 
 ```bash
 V="runuser -u view -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"

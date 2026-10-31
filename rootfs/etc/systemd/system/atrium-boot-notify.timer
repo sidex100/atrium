@@ -1,0 +1,8 @@
+[Unit]
+Description=Run atrium-boot-notify a minute after boot (it waits for systemd and the GNOME session)
+
+[Timer]
+OnBootSec=60s
+
+[Install]
+WantedBy=timers.target

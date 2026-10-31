@@ -1,0 +1,11 @@
+[Unit]
+Description=Run atrium-update every 10 min, 07:00-23:50 local time (it updates at most once a day)
+
+[Timer]
+# 2026-10-31: user: not more often than once a day, from 07:00, only while the box is free
+# local time: put your time zone instead of UTC (the same as DAYTZ in atrium-update)
+OnCalendar=*-*-* 07..23:00/10:00 UTC
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

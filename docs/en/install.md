@@ -755,9 +755,10 @@ Expected:
 - all services active;
 - watchdog in state `active`.
 
-The installation ends here. Step 19 is optional, and only after everything else has been checked.
+The main installation ends here. Two optional steps follow, independent of each other: 19 — only after
+everything else has been checked, 20 — mail, reports and automatic updates.
 
-## 19. HDMI always "connected": RDP while the TV is on another input (optional, the very last step)
+## 19. HDMI always "connected": RDP while the TV is on another input (optional, after the TV is set up)
 
 **Who needs this.** Most likely not you. Our RDP is screen sharing (step 14): it can only show a screen
 GNOME has. If one input of the TV is in use, nothing needs to be done: a TV in standby still answers the
@@ -829,5 +830,97 @@ from the computer connects; plug it back — the picture comes back by itself.
   dracut snippet) on their own; after an update — `atrium-hdmi-keep status` ([updates.md](updates.md));
 - `rootfs/etc/default/grub` deliberately does not contain these parameters — the script adds and removes
   them itself.
+
+## 20. Mail, reports and automatic updates (optional)
+
+**What you get.** The box installs updates on its own and mails about everything:
+
+- **once a day from 07:00**, only while nobody uses the box: 30 minutes without input, no video playing,
+  no sound on the DAC, no RDP, no player open (mpv, MPC-QT, VLC, fooyin, Spotify), no Moonlight, Steam
+  Link, RetroDECK or Steam game running. Busy — another try every 10 minutes until 23:50;
+- updates found → a mail "installing" → `flatpak update -y` and `dnf update -y` → `atrium-check` checks
+  everything an update can overwrite ([updates.md](updates.md)) → a report point by point. Before a
+  RetroDECK update `retroarch.cfg` and the core options get a copy next to them with the date in the name;
+- **reboot** — when `dnf needs-restarting` asks for one (kernel, glibc, systemd, firmware) or the kernel,
+  graphics or sound of the GNOME session were updated: without a reboot GNOME keeps the old ones. The report
+  "rebooting" leaves before the reboot (we wait for Postfix up to 10 minutes). If the kernel of the next boot
+  misses our parameters or the TV EDID, the box does not reboot and says so. If somebody started using the
+  box during the install, the reboot waits until it is free;
+- **a mail at every shutdown and reboot** (except the reboot after an update — its report already said so)
+  and **a report after every boot**: was the shutdown clean, what is in pstore, the CPU reset reason,
+  `atrium-check boot`, network. A freeze or a power cut shows at once.
+
+**Mail.** Postfix for sending only, through Gmail (`smtp.gmail.com:587`, TLS only). The sender is an
+address on your own domain, verified in Gmail "Send mail as": so mail does not come from `root@box`. For
+Gmail to send the verification code, the address must receive mail — we use Cloudflare Email Routing
+forwarding to the same Gmail. Postfix needs a Google app password
+(<https://myaccount.google.com/apppasswords>); you type it yourself into a hidden prompt, it is never shown.
+
+```bash
+ME=you@gmail.com            # your Gmail: login for smtp.gmail.com, also gets root's mail
+FROM=atrium@example.com     # the sender, verified in Gmail "Send mail as"
+D=$(date +%Y%m%d)
+dnf install -y --setopt=install_weak_deps=False postfix cyrus-sasl-plain
+\cp -p /etc/postfix/main.cf /etc/postfix/main.cf.bak-$D
+\cp -p /etc/postfix/header_checks /etc/postfix/header_checks.bak-$D
+\cp -p /etc/aliases /etc/aliases.bak-$D
+sed -i 's/^smtp_tls_security_level = may$/# relay to Gmail only over TLS\nsmtp_tls_security_level = encrypt/' /etc/postfix/main.cf
+cat >> /etc/postfix/main.cf <<EOF
+
+# send-only relay via Gmail (login + app password in sasl_passwd)
+relayhost = [smtp.gmail.com]:587
+smtp_sasl_auth_enable = yes
+smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+smtp_sasl_security_options = noanonymous
+smtp_sasl_tls_security_options = noanonymous
+# every sender -> the Gmail "send mail as" address
+sender_canonical_maps = static:$FROM
+# drop User-Agent from outgoing mail
+header_checks = regexp:/etc/postfix/header_checks
+EOF
+printf '%s\n' '/^User-Agent:/ IGNORE' >> /etc/postfix/header_checks
+printf 'root:\t\t%s\n' "$ME" >> /etc/aliases && newaliases
+( umask 077; read -rsp 'Gmail app password: ' P; echo; printf '[smtp.gmail.com]:587 %s:%s\n' "$ME" "${P// /}" > /etc/postfix/sasl_passwd; unset P; postmap /etc/postfix/sasl_passwd )
+postfix check && systemctl enable --now postfix
+```
+
+Postfix databases on Fedora 44 are `hash`, no separate lmdb package is needed.
+
+**Mail design.** The scripts send through `/usr/local/sbin/atrium-mail` when it exists: that is our HTML
+design, it is not part of this repository. The interface is simple: subject `-s`, service for the footer
+`-u`, body on stdin; `Key: value` lines in the body become a table. You can drop in your own script with the
+same interface. Without it mail comes as plain text.
+
+**Scripts and services.** The time zone of "07:00" and "once a day" is in two places, `UTC` in the
+repository: `DAYTZ` in `atrium-update` and `OnCalendar` in `atrium-update.timer`. Put your own (for example
+`Europe/Berlin`).
+
+```bash
+R=/root/atrium/rootfs
+install -m 755 $R/usr/local/bin/atrium-check $R/usr/local/bin/atrium-update $R/usr/local/bin/atrium-boot-notify /usr/local/bin/
+install -m 644 $R/etc/systemd/system/atrium-update.service $R/etc/systemd/system/atrium-update.timer $R/etc/systemd/system/atrium-boot-notify.service $R/etc/systemd/system/atrium-boot-notify.timer $R/etc/systemd/system/atrium-shutdown-notify.service /etc/systemd/system/
+restorecon -v /usr/local/bin/atrium-check /usr/local/bin/atrium-update /usr/local/bin/atrium-boot-notify /etc/systemd/system/atrium-*
+systemctl daemon-reload
+systemctl enable --now atrium-shutdown-notify.service
+systemctl enable atrium-boot-notify.timer
+```
+
+**Check, then switch on.**
+
+```bash
+atrium-check                # 15 checks, the last line: Problems:  none
+atrium-update busy          # free, or in use: why
+atrium-update test; atrium-boot-notify test     # 8 sample mails with (TEST) in the subject, nothing installed
+systemctl enable --now atrium-update.timer
+```
+
+**Day to day:**
+
+- the log — `journalctl -u atrium-update`, the output of the last update — `/var/lib/atrium-update/last.log`;
+- `/var/lib/atrium-update/done` — the date of the last run (once a day), `reboot-pending` — a postponed
+  reboot;
+- to switch automatic updates off — `systemctl disable --now atrium-update.timer`, then update by hand as in
+  [updates.md](updates.md);
+- `dnf update` never moves to a new Fedora release: the upgrade to 45 is by hand only (updates.md).
 
 Next — [updates and what to check after them](updates.md).

@@ -1,0 +1,188 @@
+#!/bin/bash
+# atrium-check: everything we check on atrium after an update and after boot (docs/*/updates.md,
+# "Check after an update") in one command. Read only.
+#   atrium-check        - after an update, before a reboot (atrium-update; also by hand after "dnf update")
+#   atrium-check boot   - after boot (atrium-boot-notify): + running kernel, TV output
+# Output: "Key:  value" lines (atrium-mail turns them into a table), the last one "Problems:  none|...".
+# Exit: 0 - no problems; 1 - problems; 2 - the kernel of the next boot is not ready (parameters or the TV EDID
+# missing): atrium-update does not reboot then.
+# Installed as /usr/local/sbin/atrium-check. ASCII only.
+# 2026-10-31: created
+set -u
+MODE=${1:-update}
+VIEW=view                                   # the TV user (auto login)
+VUID=$(id -u "$VIEW" 2>/dev/null || echo 1000)
+V=(runuser -u "$VIEW" -- env "XDG_RUNTIME_DIR=/run/user/$VUID" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$VUID/bus")
+# our kernel parameters (install step 12) + the two of atrium-hdmi-keep (step 19) when it is on
+PARAMS="pci-stub.ids=1022:15e3 efi_pstore.pstore_disable=0 amdgpu.ppfeaturemask=0xfff73fff amdgpu.dcfeaturemask=0x402"
+KEEP=/etc/dracut.conf.d/90-atrium-hdmi-keep.conf
+EDID=edid/atrium-tv.bin
+[ -f "$KEEP" ] && PARAMS="$PARAMS drm.edid_firmware=HDMI-A-1:$EDID video=HDMI-A-1:e"
+NPARAMS=$(wc -w <<< "$PARAMS")
+UR_PATCHED=5                                # remotes changed by patches/urserver
+RA_CFG=/home/$VIEW/.var/app/net.retrodeck.retrodeck/config/retroarch/retroarch.cfg
+TR_SETTINGS=/var/lib/transmission/.config/transmission-daemon/settings.json
+
+PROBLEMS="" GATE=0
+out() { printf '%-15s %s\n' "$1:" "$2"; }
+problem() { PROBLEMS="$PROBLEMS${PROBLEMS:+; }$1"; }
+
+missing() {                                 # our parameters missing in the argument line $1
+    local p m=""
+    for p in $PARAMS; do case " $1 " in *" $p "*) ;; *) m="$m $p" ;; esac; done
+    echo "${m# }"
+}
+
+check_kernel() {
+    local m bad="" n=0 k a next
+    m=$(missing "$(cat /etc/kernel/cmdline 2>/dev/null)")
+    [ -n "$m" ] && bad="/etc/kernel/cmdline (no $m)"
+    # every boot entry except the rescue one
+    while IFS='|' read -r k a; do
+        case "$k" in *rescue*|"") continue ;; esac
+        n=$((n + 1))
+        m=$(missing "$a")
+        [ -n "$m" ] && bad="$bad${bad:+, }${k#/boot/vmlinuz-} (no $m)"
+    done < <(grubby --info=ALL 2>/dev/null | awk -F'"' '/^kernel=/ {k = $2} /^args=/ {print k "|" $2}')
+    if [ -z "$bad" ]; then
+        out "Kernel params" "$NPARAMS of $NPARAMS in /etc/kernel/cmdline and in all $n boot entries"
+    else
+        out "Kernel params" "NOT everywhere: $bad"; problem "kernel parameters missing"
+    fi
+    # the kernel of the next boot: parameters (above) and the TV EDID in its initramfs
+    next=$(grubby --default-kernel 2>/dev/null); next=${next#/boot/vmlinuz-}
+    case " $bad " in *" $next "*) GATE=1 ;; esac
+    if [ -f "$KEEP" ]; then
+        if lsinitrd "/boot/initramfs-$next.img" 2>/dev/null | grep -q "$EDID"; then
+            out "Next boot" "$next, TV EDID in its initramfs"
+        else
+            out "Next boot" "$next, TV EDID NOT in its initramfs"; problem "TV EDID not in the initramfs of $next"; GATE=1
+        fi
+    else
+        out "Next boot" "$next"
+    fi
+    if [ "$MODE" = boot ]; then
+        m=$(missing "$(cat /proc/cmdline)")
+        if [ -z "$m" ]; then out "Running kernel" "$(uname -r), $NPARAMS of $NPARAMS parameters"
+        else out "Running kernel" "$(uname -r), NOT booted with: $m"; problem "running kernel without $m"; fi
+    fi
+}
+
+check_services() {
+    local sys usr
+    sys=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | paste -sd' ' -)
+    usr=$(systemctl --user -M "$VIEW@" --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | paste -sd' ' -)
+    if [ -z "$sys$usr" ]; then out "Services" "no failed services (system and $VIEW session)"
+    else out "Services" "FAILED: $sys${usr:+ ($VIEW: $usr)}"; problem "failed services"; fi
+}
+
+check_extensions() {
+    local list total act bad
+    list=$("${V[@]}" gnome-extensions list --enabled --details 2>/dev/null) || true
+    if [ -z "$list" ]; then out "Extensions" "no GNOME session of $VIEW to ask"; return; fi
+    total=$(grep -c '^[^ ]' <<< "$list")
+    act=$(grep -c 'State: ACTIVE' <<< "$list")
+    bad=$(awk '/^[^ ]/ {u = $1} /State:/ && $2 != "ACTIVE" {printf "%s%s %s", (n++ ? ", " : ""), u, $2}' <<< "$list")
+    if [ "$act" = "$total" ]; then out "Extensions" "$act of $total active"
+    else out "Extensions" "$act of $total active, NOT active: $bad"; problem "extensions not active"; fi
+}
+
+check_video() {
+    local prof mesa fw
+    prof=$(vainfo --display drm 2>/dev/null | grep -oE 'VAProfile(H264High|HEVCMain10|AV1Profile0)' | sort -u \
+           | sed 's/VAProfileH264High/H.264/; s/VAProfileHEVCMain10/HEVC 10-bit/; s/VAProfileAV1Profile0/AV1/' \
+           | paste -sd',' - | sed 's/,/, /g')
+    mesa=$(rpm -q --qf '%{VERSION}' mesa-dri-drivers.x86_64 2>/dev/null)          # .x86_64: Steam adds i686
+    fw=$(rpm -q --qf '%{VERSION}' mesa-va-drivers-freeworld.x86_64 2>/dev/null)
+    if [ "$(tr -cd ',' <<< "$prof" | wc -c)" = 2 ] && [ "$mesa" = "$fw" ]; then
+        out "VA-API" "$prof (mesa $mesa = freeworld $fw)"
+    else
+        out "VA-API" "${prof:-NO profiles} (mesa $mesa, freeworld ${fw:-NOT installed})"; problem "hardware video"
+    fi
+}
+
+check_sound() {
+    local cards n
+    cards=$(awk -F' - ' '/^ *[0-9]+ \[/ {print $2}' /proc/asound/cards 2>/dev/null | paste -sd',' - | sed 's/,/, /g')
+    n=$(grep -c '^ *[0-9]* \[' /proc/asound/cards 2>/dev/null)
+    if [ "$n" = 1 ]; then out "Sound" "one card: $cards"
+    else out "Sound" "$n cards: ${cards:-none} - NOT just the DAC"; problem "sound cards: $n"; fi
+}
+
+check_files() {
+    local f m="" a s
+    f=$(find /etc -name '*.rpmnew' -o -name '*.rpmsave' 2>/dev/null | paste -sd' ' -)
+    if [ -z "$f" ]; then out "rpmnew/rpmsave" "none"
+    else out "rpmnew/rpmsave" "NOT clean: $f"; problem "new package config files to merge"; fi
+    # Chromium: our master_preferences without the Fedora start page
+    if [ -f /etc/chromium/master_preferences ] && ! grep -q fedoraproject /etc/chromium/master_preferences; then
+        out "Chromium" "our master_preferences in place"
+    else
+        out "Chromium" "master_preferences NOT ours (Fedora start page back)"; problem "Chromium master_preferences"
+    fi
+    # Firefox: our policy and both prefs still known to this Firefox
+    for a in widget.wayland.vsync.enabled layout.frame_rate; do
+        grep -q "$a" /etc/firefox/policies/policies.json 2>/dev/null || m="$m $a (not in policies.json)"
+        grep -q -a -F "$a" /usr/lib64/firefox/libxul.so 2>/dev/null || m="$m $a (unknown to Firefox)"
+    done
+    if [ -z "$m" ]; then out "Firefox" "our policies.json in place, both prefs known to $(rpm -q --qf '%{VERSION}' firefox)"
+    else out "Firefox" "NOT ok:$m"; problem "Firefox prefs"; fi
+    # Russian menus of Chrome/Chromium: user copies of the system .desktop files, only Exec differs
+    m=""
+    for a in google-chrome chromium-browser; do
+        s=/usr/share/applications/$a.desktop
+        [ -f "$s" ] || continue
+        diff -q <(grep -v '^Exec=' "$s") <(grep -v '^Exec=' "/home/$VIEW/.local/share/applications/$a.desktop" 2>/dev/null) \
+            >/dev/null || m="$m $a"
+    done
+    if [ -z "$m" ]; then out "Browser menus" "copies of Chrome/Chromium .desktop match the system ones"
+    else out "Browser menus" "NOT up to date:$m (install step 8)"; problem "browser menu copies"; fi
+}
+
+check_apps() {
+    local n t
+    t=$(python3 -I -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+want = {"encryption": 2, "dht-enabled": False, "lpd-enabled": False, "preferred_transports": ["tcp"],
+        "ratio-limit-enabled": True, "ratio-limit": 0}
+bad = [k for k, v in want.items() if d.get(k) != v]
+print(" ".join(bad))' "$TR_SETTINGS" 2>/dev/null || echo "settings.json not readable")
+    if [ -z "$t" ]; then out "Transmission" "TCP only, no DHT/LPD, encryption required, stops after download"
+    else out "Transmission" "NOT ours: $t"; problem "Transmission settings"; fi
+    n=$(rpm -V urserver 2>/dev/null | grep -c remotes)
+    if [ "$n" = "$UR_PATCHED" ]; then out "Unified Remote" "patch in place ($n remotes)"
+    else out "Unified Remote" "patch NOT in place ($n of $UR_PATCHED remotes changed)"; problem "Unified Remote patch"; fi
+    if [ -f "$RA_CFG" ]; then
+        t=$(awk -F' = ' '
+            $1 == "video_fullscreen_x" && $2 != "\"1536\"" || $1 == "video_fullscreen_y" && $2 != "\"864\"" ||
+            $1 == "audio_driver" && $2 != "\"pipewire\"" || $1 == "input_joypad_driver" && $2 != "\"udev\"" ||
+            $1 == "menu_swap_ok_cancel_buttons" && $2 != "\"true\"" {printf "%s%s", (n++ ? ", " : ""), $1}' "$RA_CFG")
+        if [ -z "$t" ]; then out "RetroArch" "our retroarch.cfg in place"
+        else out "RetroArch" "NOT ours any more: $t (install step 15)"; problem "RetroArch settings reset"; fi
+    fi
+}
+
+check_tv() {
+    local st log
+    st=$(cat /sys/class/drm/card*-HDMI-A-1/status 2>/dev/null | head -1)
+    log=$(cat /sys/kernel/debug/dri/*/amdgpu_dm_dtn_log 2>/dev/null | awk '/^HPO:/ {f = 1; next} f && /^$/ {exit} f && /^\[/ {print; exit}')
+    if [ -n "$log" ]; then
+        out "TV output" "HDMI-A-1 $st, HDMI 2.1 FRL $(awk '{print $7 " lanes, " $4 ", " $5 " bit"}' <<< "$log")"
+    else
+        out "TV output" "HDMI-A-1 ${st:-?}, no FRL link now (TV off or on another input)"
+    fi
+}
+
+check_kernel
+check_services
+check_extensions
+check_video
+check_sound
+check_files
+check_apps
+[ "$MODE" = boot ] && check_tv
+out "Problems" "${PROBLEMS:-none}"
+[ "$GATE" = 1 ] && exit 2
+[ -n "$PROBLEMS" ] && exit 1
+exit 0

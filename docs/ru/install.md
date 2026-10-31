@@ -738,9 +738,10 @@ cat /sys/class/watchdog/watchdog0/state
 - все службы active;
 - watchdog в состоянии `active`.
 
-На этом установка закончена. Шаг 19 — по желанию и только после того, как всё остальное проверено.
+На этом основная установка закончена. Дальше два шага по желанию, независимые друг от друга: 19 — только
+после того, как всё остальное проверено, 20 — почта, отчёты и автообновление.
 
-## 19. HDMI всегда «подключён»: RDP, пока ТВ на другом входе (по желанию, самый последний шаг)
+## 19. HDMI всегда «подключён»: RDP, пока ТВ на другом входе (по желанию, после настройки ТВ)
 
 **Кому это надо.** Скорее всего, не тебе. RDP у нас — показ экрана (шаг 14): он может показать только
 экран, который есть у GNOME. Если на ТВ один активный вход, ничего делать не нужно: ТВ в режиме ожидания
@@ -808,5 +809,96 @@ atrium-hdmi-keep status
 - новые ядра при обновлении получают и параметры (из `/etc/kernel/cmdline`), и файл в initramfs
   (сниппет dracut) сами; после обновления — `atrium-hdmi-keep status` ([updates.md](updates.md));
 - в `rootfs/etc/default/grub` этих параметров нет намеренно — их добавляет и убирает сам скрипт.
+
+## 20. Почта, отчёты и автообновление (по желанию)
+
+**Что получится.** Бокс сам ставит обновления и пишет обо всём на почту:
+
+- **раз в сутки с 07:00**, только пока боксом никто не пользуется: 30 минут без ввода, не идёт видео, на
+  ЦАП не играет звук, нет RDP, не открыт плеер (mpv, MPC-QT, VLC, fooyin, Spotify), не запущены Moonlight,
+  Steam Link, RetroDECK или игра Steam. Занят — повтор каждые 10 минут до 23:50;
+- нашлись обновления → письмо «ставлю» → `flatpak update -y` и `dnf update -y` → `atrium-check` проверяет
+  всё, что обновление может затереть ([updates.md](updates.md)) → отчёт по пунктам. Перед обновлением
+  RetroDECK копия `retroarch.cfg` и настроек ядер кладётся рядом с датой в имени;
+- **перезагрузка** — если её требует `dnf needs-restarting` (ядро, glibc, systemd, прошивки) или обновились
+  ядро, графика или звук сеанса GNOME: без перезагрузки GNOME работает на старых. Отчёт «ухожу в
+  перезагрузку» уходит до неё (Postfix ждём до 10 минут). Если у ядра следующей загрузки нет наших
+  параметров или EDID ТВ — не перезагружается и пишет об этом. Если за время установки боксом начали
+  пользоваться — перезагрузка ждёт, пока он освободится;
+- **письмо при каждом выключении и перезагрузке** (кроме перезагрузки после обновления — о ней уже сказал
+  отчёт) и **отчёт после каждой загрузки**: штатно ли выключался, что лежит в pstore, причина сброса
+  процессора, `atrium-check boot`, сеть. Зависание или пропавшее питание видно сразу.
+
+**Почта.** Postfix только на отправку, через Gmail (`smtp.gmail.com:587`, только TLS). Отправитель — адрес
+на своём домене, подтверждённый в Gmail «Отправлять как»: так письма приходят не от `root@бокс`. Чтобы
+Gmail прислал код подтверждения, этот адрес должен принимать почту — у нас это Cloudflare Email Routing с
+пересылкой в тот же Gmail. Для Postfix нужен пароль приложения Google
+(<https://myaccount.google.com/apppasswords>); его вводишь сам в скрытое поле, на экран он не выводится.
+
+```bash
+ME=you@gmail.com            # твой Gmail: вход на smtp.gmail.com, сюда же почта root
+FROM=atrium@example.com     # отправитель, подтверждён в Gmail «Отправлять как»
+D=$(date +%Y%m%d)
+dnf install -y --setopt=install_weak_deps=False postfix cyrus-sasl-plain
+\cp -p /etc/postfix/main.cf /etc/postfix/main.cf.bak-$D
+\cp -p /etc/postfix/header_checks /etc/postfix/header_checks.bak-$D
+\cp -p /etc/aliases /etc/aliases.bak-$D
+sed -i 's/^smtp_tls_security_level = may$/# relay to Gmail only over TLS\nsmtp_tls_security_level = encrypt/' /etc/postfix/main.cf
+cat >> /etc/postfix/main.cf <<EOF
+
+# send-only relay via Gmail (login + app password in sasl_passwd)
+relayhost = [smtp.gmail.com]:587
+smtp_sasl_auth_enable = yes
+smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+smtp_sasl_security_options = noanonymous
+smtp_sasl_tls_security_options = noanonymous
+# every sender -> the Gmail "send mail as" address
+sender_canonical_maps = static:$FROM
+# drop User-Agent from outgoing mail
+header_checks = regexp:/etc/postfix/header_checks
+EOF
+printf '%s\n' '/^User-Agent:/ IGNORE' >> /etc/postfix/header_checks
+printf 'root:\t\t%s\n' "$ME" >> /etc/aliases && newaliases
+( umask 077; read -rsp 'Gmail app password: ' P; echo; printf '[smtp.gmail.com]:587 %s:%s\n' "$ME" "${P// /}" > /etc/postfix/sasl_passwd; unset P; postmap /etc/postfix/sasl_passwd )
+postfix check && systemctl enable --now postfix
+```
+
+Базы Postfix в Fedora 44 — `hash`, отдельного пакета lmdb не нужно.
+
+**Оформление писем.** Скрипты шлют письма через `/usr/local/sbin/atrium-mail`, если он есть: это наше
+HTML-оформление, в репозиторий оно не входит. Интерфейс простой: тема `-s`, служба для подписи `-u`, тело на
+stdin; строки `Ключ: значение` в теле — таблица. Можно положить свой скрипт с тем же интерфейсом. Без него
+письма приходят обычным текстом.
+
+**Скрипты и службы.** Часовой пояс «07:00» и «раз в сутки» — в двух местах, в репозитории там `UTC`:
+`DAYTZ` в `atrium-update` и `OnCalendar` в `atrium-update.timer`. Поставь свой (например, `Europe/Berlin`).
+
+```bash
+R=/root/atrium/rootfs
+install -m 755 $R/usr/local/bin/atrium-check $R/usr/local/bin/atrium-update $R/usr/local/bin/atrium-boot-notify /usr/local/bin/
+install -m 644 $R/etc/systemd/system/atrium-update.service $R/etc/systemd/system/atrium-update.timer $R/etc/systemd/system/atrium-boot-notify.service $R/etc/systemd/system/atrium-boot-notify.timer $R/etc/systemd/system/atrium-shutdown-notify.service /etc/systemd/system/
+restorecon -v /usr/local/bin/atrium-check /usr/local/bin/atrium-update /usr/local/bin/atrium-boot-notify /etc/systemd/system/atrium-*
+systemctl daemon-reload
+systemctl enable --now atrium-shutdown-notify.service
+systemctl enable atrium-boot-notify.timer
+```
+
+**Проверка, потом включение.**
+
+```bash
+atrium-check                # 15 проверок, последняя строка: Problems:  none
+atrium-update busy          # free или in use: почему
+atrium-update test; atrium-boot-notify test     # 8 писем-образцов с (TEST) в теме, ничего не ставится
+systemctl enable --now atrium-update.timer
+```
+
+**В работе:**
+
+- журнал — `journalctl -u atrium-update`, вывод последнего обновления — `/var/lib/atrium-update/last.log`;
+- `/var/lib/atrium-update/done` — дата последнего прогона (раз в сутки), `reboot-pending` — отложенная
+  перезагрузка;
+- выключить автообновление — `systemctl disable --now atrium-update.timer`, обновляться руками, как в
+  [updates.md](updates.md);
+- `dnf update` не переходит на новую версию Fedora: переход на 45 — только руками (updates.md).
 
 Дальше — [обновления и что после них проверять](updates.md).

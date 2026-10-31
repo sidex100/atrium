@@ -71,6 +71,10 @@ Inside it is a full Linux server that runs around the clock.
   - network speed and temperature;
   - disk usage on the desktop;
   - a status summary at SSH login.
+- **Updates itself and reports by mail** (optional). Once a day from 07:00, only while nobody uses the box:
+  installs everything (dnf and flatpak), checks that no update has overwritten our settings, mails before
+  and after, reboots only when needed and only after the mail has left. A report after every boot: a freeze
+  or a power cut shows at once.
 
 ### Hardware
 
@@ -100,8 +104,8 @@ Hardware decoding: H.264, HEVC (incl. 10-bit), VP9 and AV1.
   - updates reboot it on their own, the system shows ads and notifications;
   - in HDR the desktop and normal video get dark. For us Windows was dark in HDR, while GNOME shows SDR
     content at normal brightness in HDR;
-  - here: not a single popup, updates only by hand from the console, every setting written down in this
-    repository.
+  - here: not a single popup; updates come once a day only while nobody watches, with a mail report and our
+    own checks; every setting is written down in this repository.
 - **Nvidia Shield and Android boxes.** Fine for Kodi and subscriptions, but 2019 hardware. No PC games, no
   PS3 emulation, no server.
 
@@ -150,6 +154,7 @@ What is **not** here:
 - **Secrets.** Passwords, keys and Wi-Fi profiles are set by each person during the install.
 - **Third-party software and media.** Unified Remote, third-party GNOME extensions, firmware, BIOS, Apple
   Aerial clips, product photos. The docs give links, versions and checksums for them.
+- **Our HTML mail design** (`atrium-mail`). Without it the mail of step 20 comes as plain text.
 - **Personal values.** The domain (`example.com`), the home network (`192.168.0.0/24`, the box at
   `192.168.0.42`) and the time zone (`UTC`) are examples — set your own.
 
@@ -226,6 +231,10 @@ What is **not** here:
   - скорость сети и температура;
   - на рабочем столе — заполнение дисков;
   - при входе по SSH — сводка состояния.
+- **Сам обновляется и отчитывается письмами** (по желанию). Раз в сутки с 07:00, только пока боксом никто
+  не пользуется: ставит всё (dnf и flatpak), проверяет, что обновления не затёрли наши настройки, пишет
+  письма до и после, перезагружается только когда нужно и только после того, как письмо ушло. Отчёт после
+  каждой загрузки: зависание или пропавшее питание видно сразу.
 
 ### Железо
 
@@ -255,8 +264,8 @@ What is **not** here:
   - обновления сами перезагружают машину, система показывает рекламу и уведомления;
   - в HDR рабочий стол и обычное видео становятся тёмными. У нас Windows в HDR была тёмной, а GNOME
     показывает SDR-контент в HDR с нормальной яркостью;
-  - здесь: ни одного всплывающего окна, обновления только вручную из консоли, каждая настройка записана
-    в этом репозитории.
+  - здесь: ни одного всплывающего окна; обновления раз в сутки и только пока никто не смотрит, с отчётом
+    на почту и нашими проверками; каждая настройка записана в этом репозитории.
 - **Nvidia Shield и Android-приставки.** Хороши для Kodi и подписок, но железо 2019 года. Ни ПК-игр, ни
   эмуляции PS3, ни сервера.
 
@@ -305,6 +314,7 @@ docs/        документация на русском и английско�
 - **Секретов.** Пароли, ключи и профили Wi-Fi каждый задаёт сам при установке.
 - **Чужих программ и медиа.** Unified Remote, сторонние расширения GNOME, прошивки, BIOS, ролики Apple
   Aerial, фото товаров. Для них в документации есть ссылки, версии и контрольные суммы.
+- **Нашего HTML-оформления писем** (`atrium-mail`). Без него письма шага 20 приходят обычным текстом.
 - **Личных значений.** Домен (`example.com`), домашняя сеть (`192.168.0.0/24`, бокс — `192.168.0.42`) и
   часовой пояс (`UTC`) — примеры, поставь свои.
 

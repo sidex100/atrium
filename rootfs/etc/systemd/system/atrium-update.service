@@ -1,0 +1,9 @@
+[Unit]
+Description=Install updates when nobody uses atrium, check, mail, reboot if needed
+Wants=network-online.target
+After=network-online.target postfix.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/atrium-update run
+TimeoutStartSec=3h

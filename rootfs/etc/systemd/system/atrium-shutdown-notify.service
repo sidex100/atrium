@@ -1,0 +1,15 @@
+[Unit]
+Description=Mail when atrium goes down (reboot / poweroff) with the reason
+# started after the network and postfix => at shutdown it is stopped BEFORE them, so the mail can leave
+Wants=network-online.target
+After=network-online.target nss-lookup.target postfix.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/usr/local/sbin/atrium-boot-notify shutdown
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

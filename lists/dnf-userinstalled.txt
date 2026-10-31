@@ -110,6 +110,7 @@ pinfo
 plocate
 plymouth
 policycoreutils
+postfix
 prefixdevname
 procps-ng
 psacct

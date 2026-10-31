@@ -1,0 +1,9 @@
+[Unit]
+Description=Mail a report after boot: previous shutdown, our checks, network
+Wants=network-online.target
+After=network-online.target postfix.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/atrium-boot-notify boot
+TimeoutStartSec=300

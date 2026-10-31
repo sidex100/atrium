@@ -1,0 +1,291 @@
+#!/bin/bash
+# atrium-update: automatic updates of atrium with mail (atrium-mail) and our checks (atrium-check).
+#   run  - from atrium-update.timer, every 10 min from 07:00 to 23:50 local time: at most once a day and only
+#          while nobody uses the box (see busy). Finds updates (dnf + flatpak) -> mail "installing" ->
+#          flatpak update + dnf update -> atrium-check -> report. Reboot when "dnf needs-restarting" says so
+#          (kernel, glibc, systemd, firmware...) or when the kernel, graphics or sound of the GNOME session were
+#          updated (the running session keeps the old ones). The report leaves before the reboot (we wait for
+#          postfix, at most 10 min). No reboot when the kernel of the next boot is not ready (atrium-check exit 2);
+#          box in use again by then -> the reboot waits until it is free (checked every 10 min, with a mail).
+#   busy - print whether the box is in use now and why (exit 0 = in use, 1 = free)
+#   test - every kind of mail marked (TEST); nothing is installed or rebooted
+# Before a RetroDECK update its retroarch.cfg and core options get a dated copy next to them.
+# State in /var/lib/atrium-update/: done (local date of the last run), last.log (output of the last update),
+# reboot-pending (reason of a postponed reboot), errors (failed searches in a row).
+# Installed as /usr/local/sbin/atrium-update. ASCII only.
+# 2026-10-31: created (user: install everything, daily from 07:00 when the box is free; mail before and
+# after, the reboot mail leaves before the reboot)
+set -u
+STATE=/var/lib/atrium-update
+LOG=$STATE/last.log
+PENDING=$STATE/reboot-pending
+REBOOT_FLAG=/run/atrium-update.reboot      # read by atrium-boot-notify at shutdown: reason, no second mail
+DAYTZ=UTC                                  # the day of "once a day": put your time zone, e.g. Europe/Berlin
+VIEW=view                                   # the TV user (auto login)
+VUID=$(id -u "$VIEW" 2>/dev/null || echo 1000)
+V=(runuser -u "$VIEW" -- env "XDG_RUNTIME_DIR=/run/user/$VUID" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$VUID/bus")
+IDLE_MIN=30                                 # minutes without input before the box counts as free
+MAIL_WAIT=600                               # seconds to wait for postfix before a reboot
+ERR_MAIL=6                                  # failed searches in a row (10 min apart) before an ERROR mail
+# packages that need a reboot even when dnf needs-restarting says no: the running GNOME session keeps the old
+# graphics and sound until it restarts
+SESSION_PKGS='^(kernel(-core|-modules.*)?|mesa-.*|libdrm|mutter|gnome-shell|gnome-remote-desktop|gdm|xorg-x11-server-Xwayland|pipewire.*|wireplumber.*|linux-firmware|amd-gpu-firmware)\.'
+RA_DIR=/home/$VIEW/.var/app/net.retrodeck.retrodeck/config/retroarch
+TAG="[$(hostname -s)]"
+TEST=""                                     # " (TEST)" in test mode
+
+send() {                                    # $1 subject without the tag, $2 body
+    local body=$2
+    [ -n "$TEST" ] && body="TEST: a sample of this mail, nothing has happened.
+
+$body"
+    if [ -x /usr/local/sbin/atrium-mail ]; then
+        printf '%s\n' "$body" | /usr/local/sbin/atrium-mail -u atrium-update -s "$TAG $1$TEST"
+    else                                    # no template installed: plain mail
+        printf 'Subject: %s\n\n%s\n' "$TAG $1$TEST" "$body" | /usr/sbin/sendmail -oi root
+    fi
+}
+indent() { sed 's/^/  /'; }
+kv() { printf '%-15s %s\n' "$1:" "$2"; }   # "Key: value", aligned as atrium-check
+
+busy() {                                    # prints why the box is in use; exit 0 = in use
+    local r="" p pid idle
+    for pid in $(pgrep -x mpv); do          # the screensaver plays Aerial in mpv too - that is not use
+        grep -qa atrium-screensaver "/proc/$pid/cmdline" 2>/dev/null || { r="$r, mpv is open"; break; }
+    done
+    for p in mpc-qt vlc fooyin spotify moonlight steamlink retroarch es-de; do
+        pgrep -x "$p" >/dev/null && r="$r, $p is open"
+    done
+    pgrep -f SteamLaunch >/dev/null && r="$r, a Steam game is running"
+    grep -qs RUNNING /proc/asound/card*/pcm*p/sub*/status && r="$r, sound is playing"
+    ss -Htn state established '( sport = :3389 )' 2>/dev/null | grep -q . && r="$r, RDP is connected"
+    if [ -S "/run/user/$VUID/bus" ]; then
+        idle=$("${V[@]}" gdbus call --session --dest org.gnome.Mutter.IdleMonitor \
+               --object-path /org/gnome/Mutter/IdleMonitor/Core --method org.gnome.Mutter.IdleMonitor.GetIdletime \
+               2>/dev/null | sed -n 's/.*uint64 \([0-9]*\).*/\1/p')
+        [ -n "$idle" ] && [ "$idle" -lt $((IDLE_MIN * 60000)) ] && r="$r, used $((idle / 60000)) min ago"
+        "${V[@]}" gdbus call --session --dest org.gnome.SessionManager --object-path /org/gnome/SessionManager \
+            --method org.gnome.SessionManager.IsInhibited 8 2>/dev/null | grep -q true && r="$r, video is playing"
+    fi
+    r=${r#, }
+    [ -n "$r" ] && { echo "$r"; return 0; }
+    return 1
+}
+
+wait_mail() {                               # until the postfix queue is empty, at most MAIL_WAIT s
+    local i
+    sleep 2
+    for i in $(seq 1 "$MAIL_WAIT"); do
+        [ -z "$(postqueue -j 2>/dev/null)" ] && return 0
+        sleep 1
+    done
+    return 1
+}
+
+reboot_now() {                              # $1 reason; $2 "mail": a postponed reboot, tell first
+    if [ "${2:-}" = mail ]; then
+        send "REBOOT: rebooting now, the box is free" "The reboot after the updates was postponed because the box was in use. Now it is free: rebooting.
+
+$(kv Reboot "$1")
+$(kv Problems none)"
+    fi
+    printf '%s\n' "$1" > "$REBOOT_FLAG"
+    rm -f "$PENDING"
+    wait_mail || echo "postfix still has mail after $MAIL_WAIT s - rebooting anyway, it stays in the queue"
+    systemctl reboot
+    exit 0
+}
+
+find_updates() {                            # sets DNF_LIST FP_LIST N_DNF N_FP; 1 = could not look
+    local out rc
+    out=$(dnf -q check-upgrade --refresh 2>>"$LOG"); rc=$?
+    [ "$rc" = 0 ] || [ "$rc" = 100 ] || return 1
+    DNF_LIST=$(awk 'NF >= 3 && $1 ~ /\./ {print $1 " " $2}' <<< "$out")
+    FP_LIST=$(flatpak remote-ls --updates --system --columns=application,version 2>>"$LOG" | tr '\t' ' ') || return 1
+    N_DNF=$(grep -c . <<< "$DNF_LIST"); N_FP=$(grep -c . <<< "$FP_LIST")
+}
+
+rpm_list() { rpm -qa --qf '%{NAME}.%{ARCH} %{VERSION}-%{RELEASE}\n' | LC_ALL=C sort; }
+
+backup_retroarch() {                        # dated copies before a RetroDECK update (user: easier to fix)
+    local f d
+    d=$(date +%Y%m%d)
+    for f in "$RA_DIR/retroarch.cfg" "$RA_DIR/retroarch-core-options.cfg"; do
+        [ -f "$f" ] && [ ! -e "$f.bak-$d" ] && runuser -u "$VIEW" -- cp -p "$f" "$f.bak-$d"
+    done
+}
+
+install_updates() {
+    local total=$((N_DNF + N_FP)) before changed frc=0 drc=0 chk crc reboot="" s why subj body lead pk fp
+    pk=""; [ "$N_DNF" != 0 ] && pk="dnf packages:
+$(indent <<< "$DNF_LIST")
+"
+    fp=""; [ "$N_FP" != 0 ] && fp="flatpak:
+$(indent <<< "$FP_LIST")
+"
+    send "UPDATE: $total updates found, installing" "Updates found, installing them now. The report follows when they are in.
+
+$(kv dnf "$N_DNF packages")
+$(kv flatpak "$N_FP apps and runtimes")
+$(kv Box "free (nobody used it for $IDLE_MIN min, nothing open or playing)")
+
+$pk
+$fp"
+    before=$(rpm_list)
+    if [ "$N_FP" != 0 ]; then
+        grep -q net.retrodeck.retrodeck <<< "$FP_LIST" && backup_retroarch
+        echo "== flatpak update" >> "$LOG"
+        flatpak update -y --noninteractive --system >> "$LOG" 2>&1; frc=$?
+    fi
+    if [ "$N_DNF" != 0 ]; then
+        echo "== dnf update" >> "$LOG"
+        dnf -y update >> "$LOG" 2>&1; drc=$?
+    fi
+    changed=$(LC_ALL=C join -a1 -a2 -e - -o 0,1.2,2.2 <(echo "$before") <(rpm_list) | awk '
+        $2 == $3 {next}
+        $2 == "-" {print $1 " " $3 " (new)"; next}
+        $3 == "-" {print $1 " " $2 " (removed)"; next}
+        {print $1 " " $2 " -> " $3}')
+    chk=$(/usr/local/sbin/atrium-check); crc=$?
+
+    if [ "$frc" != 0 ] || [ "$drc" != 0 ]; then
+        send "ERROR: update failed (dnf exit $drc, flatpak exit $frc)" "The update did not finish cleanly. No reboot; the next try is tomorrow.
+
+$chk
+
+End of the log ($LOG):
+$(tail -40 "$LOG" | indent)
+
+Changed so far:
+$(indent <<< "${changed:-nothing}")"
+        return
+    fi
+
+    dnf -C needs-restarting >/dev/null 2>&1; [ $? = 1 ] && reboot="core libraries or services (dnf needs-restarting)"
+    s=$(awk '{print $1}' <<< "$changed" | grep -E "$SESSION_PKGS" | sed 's/\.[^.]*$//' | sort -u | paste -sd' ' -)
+    [ -n "$s" ] && reboot="${reboot:+$reboot; }session: $(sed 's/ /, /g' <<< "$s")"
+    lead="Updates installed and checked."
+    if [ -z "$reboot" ]; then
+        subj="OK: $total updates installed, no reboot needed"
+        [ "$crc" != 0 ] && subj="WARNING: $total updates installed, no reboot needed - the check found problems"
+        reboot="not needed"
+    elif [ "$crc" = 2 ]; then
+        subj="WARNING: $total updates installed, reboot NOT done - the kernel of the next boot is not ready"
+        lead="$lead The reboot is NOT done: the kernel of the next boot misses our parameters or the TV EDID (see Next boot). The box keeps running the old kernel; fix it, then reboot by hand."
+        reboot="needed ($reboot) - NOT done"
+    elif why=$(busy); then
+        subj="WARNING: $total updates installed, reboot postponed - the box is in use"
+        lead="$lead The reboot waits until the box is free again (checked every 10 min, a mail comes then)."
+        printf '%s\n' "$reboot" > "$PENDING"
+        reboot="needed ($reboot) - postponed: $why"
+    else
+        subj="REBOOT: $total updates installed, rebooting now"
+        [ "$crc" = 1 ] && subj="$subj - the check found problems"
+        lead="$lead The box reboots right after this mail; a boot report follows."
+        printf '%s\n' "$reboot" > "$PENDING"          # reboot_now below takes it from here
+        reboot="needed: $reboot"
+    fi
+    body="$lead
+
+$(kv Installed "dnf $N_DNF packages, flatpak $N_FP apps and runtimes")
+$(kv Reboot "$reboot")
+$chk
+
+Packages:
+$(indent <<< "${changed:-nothing changed}")
+"
+    [ "$N_FP" != 0 ] && body="$body
+Flatpak:
+$(indent <<< "$FP_LIST")"
+    send "$subj" "$body"
+    if [ "${subj%%:*}" = REBOOT ]; then
+        reboot_now "$(cat "$PENDING")"
+    fi
+}
+
+run() {
+    local today why n
+    mkdir -p "$STATE"; chmod 700 "$STATE"
+    today=$(TZ=$DAYTZ date +%F)
+    if [ -f "$PENDING" ] && [ ! -e "$REBOOT_FLAG" ]; then   # a reboot postponed earlier
+        busy >/dev/null && exit 0
+        reboot_now "$(cat "$PENDING")" mail
+    fi
+    [ "$(cat "$STATE/done" 2>/dev/null)" = "$today" ] && exit 0
+    if why=$(busy); then echo "box in use: $why - next try in 10 min"; exit 0; fi
+    : > "$LOG"
+    if ! find_updates; then
+        n=$(( $(cat "$STATE/errors" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$STATE/errors"
+        echo "could not look for updates ($n in a row), see $LOG"
+        [ "$n" = "$ERR_MAIL" ] && send "ERROR: could not look for updates" "dnf or flatpak could not look for updates $n times in a row (every 10 min). No internet, or a repository is down. The tries go on every 10 min; the next mail about it comes only after a search has worked again and failed $ERR_MAIL times anew.
+
+End of the log ($LOG):
+$(tail -20 "$LOG" | indent)"
+        exit 0
+    fi
+    rm -f "$STATE/errors"
+    echo "$today" > "$STATE/done"           # once a day, whatever happens next
+    if [ "$N_DNF" = 0 ] && [ "$N_FP" = 0 ]; then echo "no updates"; exit 0; fi
+    install_updates
+}
+
+test_mails() {                              # every kind of mail, real check output, sample package lists
+    local chk
+    TEST=" (TEST)"
+    chk=$(/usr/local/sbin/atrium-check)
+    N_DNF=3; N_FP=1
+    DNF_LIST="chromium.x86_64 156.0.8078.79-1.fc44
+kernel.x86_64 7.2.14-200.fc44
+pipewire.x86_64 1.6.12-1.fc44"
+    FP_LIST="com.spotify.Client 1.2.96"
+    send "UPDATE: 4 updates found, installing" "Updates found, installing them now. The report follows when they are in.
+
+dnf:        3 packages
+flatpak:    1 apps and runtimes
+Box:        free (nobody used it for $IDLE_MIN min, nothing open or playing)
+
+dnf packages:
+$(indent <<< "$DNF_LIST")
+
+flatpak:
+$(indent <<< "$FP_LIST")"
+    send "OK: 4 updates installed, no reboot needed" "Updates installed and checked.
+
+Installed:  dnf 3 packages, flatpak 1 apps and runtimes
+Reboot:     not needed
+$chk
+
+Packages:
+  chromium.x86_64 156.0.8078.73-1.fc44 -> 156.0.8078.79-1.fc44
+
+Flatpak:
+$(indent <<< "$FP_LIST")"
+    send "REBOOT: 4 updates installed, rebooting now" "Updates installed and checked. The box reboots right after this mail; a boot report follows.
+
+Installed:  dnf 3 packages, flatpak 1 apps and runtimes
+Reboot:     needed: core libraries or services (dnf needs-restarting); session: kernel, pipewire
+$chk
+
+Packages:
+  kernel.x86_64 7.2.14-200.fc44 (new)
+  pipewire.x86_64 1.6.11-1.fc44 -> 1.6.12-1.fc44"
+    send "WARNING: 4 updates installed, reboot postponed - the box is in use" "Updates installed and checked. The reboot waits until the box is free again (checked every 10 min, a mail comes then).
+
+Installed:  dnf 3 packages, flatpak 1 apps and runtimes
+Reboot:     needed (session: kernel) - postponed: mpv is open, used 2 min ago
+$chk"
+    send "ERROR: update failed (dnf exit 1, flatpak exit 0)" "The update did not finish cleanly. No reboot; the next try is tomorrow.
+
+$chk
+
+End of the log ($LOG):
+  Error: Failed to download packages
+  Curl error (6): Could not resolve hostname"
+}
+
+case "${1:-}" in
+    run)  run ;;
+    busy) if why=$(busy); then echo "in use: $why"; exit 0; else echo "free"; exit 1; fi ;;
+    test) test_mails ;;
+    *)    echo "usage: $0 run|busy|test" >&2; exit 2 ;;
+esac
