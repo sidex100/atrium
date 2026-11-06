@@ -63,7 +63,8 @@ your HDMI port does not carry HDMI 2.1 — [tv-output.md](tv-output.md).
 set of programs. After that we install exactly what a media center needs, and we know every package.
 
 1. Download **Fedora Everything, Network Install, x86_64** — https://fedoraproject.org/misc/ (the Everything section)
-   (we use Fedora 44). Write the USB stick with Fedora Media Writer or `dd`.
+   (we use Fedora 45: installed 44 and upgraded, see [updates.md](updates.md)). Write the USB stick with
+   Fedora Media Writer or `dd`.
 2. Boot from the stick (F7 → the stick) and go through the installer:
    - **Language:** English (United States). A Russian GNOME interface is not needed, and English is more
      reliable in the console.
@@ -155,7 +156,7 @@ R=/root/atrium/rootfs
 around the clock (torrents, the shared folder, remote access).
 
 ```bash
-dnf -y install mc nano htop gnome-shell gdm gnome-session-wayland-session gnome-control-center nautilus ptyxis gnome-shell-extension-dash-to-dock xdg-desktop-portal-gnome xdg-user-dirs-gtk gnome-keyring pipewire-alsa
+dnf -y install mc nano htop gnome-shell gdm gnome-session-wayland-session gnome-control-center nautilus ptyxis gnome-shell-extension-dash-to-dock xdg-desktop-portal-gnome xdg-user-dirs-gtk pipewire-alsa
 dnf mark user tuned
 dnf remove --assumeno gnome-tour malcontent-control tuned-ppd
 ```
@@ -186,6 +187,22 @@ systemctl set-default graphical.target
 - `custom.conf` — autologin for `view` and **a new login after 5 seconds** if the GNOME session crashes.
   The session once crashed because of a mutter bug (see [problems.md](problems.md)), and RDP came back
   on its own.
+
+**The keyring (app passwords).** On Fedora 45 it is kept by `oo7-daemon`, which comes with `gdm`. The keyring
+holds the RDP password (step 14) and the keys Chrome and Chromium use to encrypt cookies and site logins.
+Normally the login password opens the keyring, but `view` has none. So we put the keyring password into an
+encrypted systemd credential: oo7 reads it on every start and opens the keyring with no dialogs (as the oo7
+documentation suggests). Without it the keyring stays locked: Chrome makes a new key and logs out of every
+site, RDP does not find its password. Do it after the first boot into GNOME, before the first browser start.
+Make up the password and keep it in a password manager: you will need it if the host key
+(`/var/lib/systemd/credential.secret`) is lost in a reinstall. root can decrypt the credential — by design.
+
+```bash
+install -d -o view -g view -m 700 /home/view/.config/credstore.encrypted && ( read -rsp 'Keyring password: ' P1 && echo && read -rsp 'Repeat: ' P2 && echo && [ -n "$P1" ] && [ "$P1" = "$P2" ] && printf %s "$P1" | runuser -u view -- env XDG_RUNTIME_DIR=/run/user/1000 systemd-creds encrypt --user --name=oo7.keyring-encryption-password - /home/view/.config/credstore.encrypted/oo7.keyring-encryption-password ) && systemctl reboot
+```
+
+After the reboot the oo7 log should say `Unlocking session keyring with systemd credential`:
+`journalctl -b _SYSTEMD_USER_UNIT=oo7-daemon.service`.
 
 Do not reboot yet: the media drive comes first.
 
@@ -359,27 +376,31 @@ extensions:
 
 We install all extensions **system-wide** in `/usr/local/share/gnome-shell/extensions`. The reason: with
 the setting `allow-extension-installation false` (GNOME does not check for updates and shows no
-notifications), GNOME 50 stops loading extensions from the home folder.
+notifications), GNOME 50 and 51 stop loading extensions from the home folder.
 
-We download the three third-party extensions from extensions.gnome.org in exactly the versions installed
-on atrium and verify their checksums:
+We download the three third-party extensions in exactly the versions installed on atrium and verify their
+checksums. All three work on both GNOME 50 and 51:
 
-| Extension | Version | What it gives |
-|---|---|---|
-| Executor | 30 | command output in the panel: CPU/GPU/VCN load and network speed |
-| Desktop Widgets (azclock) | 21 (16.1) | text on the desktop: `df` and `du` of the disks |
-| GJS OSK | 53 | an on-screen keyboard like in Windows |
+| Extension | Version | From | What it gives |
+|---|---|---|---|
+| Executor | 32 | extensions.gnome.org | command output in the panel: CPU/GPU/VCN load and network speed |
+| Desktop Widgets (azclock) | 21 (16.1) | extensions.gnome.org | text on the desktop: `df` and `du` of the disks |
+| GJS OSK | 8761dd7 (`100000` in metadata) | the author's GitHub release | an on-screen keyboard like in Windows |
+
+GJS OSK comes from GitHub: as of November 2026 the extensions site only has a version up to GNOME 50, while
+the author's release supports 45–51. The `chmod` below fixes the file permissions after unpacking: the
+Executor archive has `metadata.json` with mode 600, and without the fix GNOME does not load it.
 
 ```bash
 E=/usr/local/share/gnome-shell/extensions; mkdir -p $E; cd /tmp
-while read -r uuid tag sum; do
-  curl -fsSL -o ext.zip "https://extensions.gnome.org/download-extension/$uuid.shell-extension.zip?version_tag=$tag" &&
+while read -r uuid url sum; do
+  curl -fsSL -o ext.zip "$url" &&
   echo "$sum  ext.zip" | sha256sum -c - && rm -rf "$E/$uuid" && mkdir "$E/$uuid" && unzip -q ext.zip -d "$E/$uuid" &&
   { [ -f "$E/$uuid/schemas/gschemas.compiled" ] || glib-compile-schemas "$E/$uuid/schemas"; } && rm -f ext.zip
 done <<'EOF'
-executor@raujonas.github.io 70219 1ea446f27f7d33cf58b14fc440f33ac6ec50ae9c50c5e3dec53594a4939ddb07
-azclock@azclock.gitlab.com 75151 79b0e9fcd4d11fb86985dd64eef4d4f6310698a6c37646507812bc3e2eb5b603
-gjsosk@vishram1123.com 74269 38578bfb54880c8fec13e24783406d4c77ad047b5bc205b7a5814dc631231b6d
+executor@raujonas.github.io https://extensions.gnome.org/download-extension/executor@raujonas.github.io.shell-extension.zip?version_tag=77158 9ff49a774f5dffc099503a7ced5bf41b400b70103ce74aa94a7f32e7d4578fbf
+azclock@azclock.gitlab.com https://extensions.gnome.org/download-extension/azclock@azclock.gitlab.com.shell-extension.zip?version_tag=75151 79b0e9fcd4d11fb86985dd64eef4d4f6310698a6c37646507812bc3e2eb5b603
+gjsosk@vishram1123.com https://github.com/Vishram1123/gjs-osk/releases/download/8761dd7/gjsosk%40vishram1123_main.zip ce657a8583241fe9a5b84a3aebff85274186b5df043062f040412122dadac041
 EOF
 R=/root/atrium/rootfs
 cp -r $R/usr/local/share/gnome-shell/extensions/. $E/
@@ -884,7 +905,8 @@ printf 'root:\t\t%s\n' "$ME" >> /etc/aliases && newaliases
 postfix check && systemctl enable --now postfix
 ```
 
-Postfix databases on Fedora 44 are `hash`, no separate lmdb package is needed.
+Postfix databases on Fedora 44 and 45 are `hash` (Postfix is built with Berkeley DB), no separate lmdb
+package is needed.
 
 **Mail design.** The scripts send through `/usr/local/sbin/atrium-mail` when it exists: that is our HTML
 design, it is not part of this repository. The interface is simple: subject `-s`, service for the footer

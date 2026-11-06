@@ -51,7 +51,6 @@ gdm
 glibc
 gnome-backgrounds
 gnome-control-center
-gnome-keyring
 gnome-session-wayland-session
 gnome-shell
 gnome-shell-extension-dash-to-dock
@@ -67,12 +66,17 @@ grubby
 hostname
 htop
 hunspell
+iperf3
 iproute
 iptstate
 iputils
 irqbalance
 kbd
 kernel
+kernel-core
+kernel-modules
+kernel-modules-core
+kmscon
 langpacks-en
 less
 libva-utils
@@ -99,6 +103,7 @@ nmap-ncat
 ntfs-3g
 ntfsprogs
 nvme-cli
+oo7-daemon
 opensc
 openssh-clients
 openssh-server
@@ -117,8 +122,10 @@ psacct
 ptyxis
 quota
 realmd
+remove-retired-packages
 rootfiles
 rpm
+rpmconf
 rpmfusion-free-release
 rpmfusion-nonfree-release
 rsms-inter-vf-fonts
@@ -162,6 +169,7 @@ vlc-plugins-freeworld
 wget2-wget
 which
 whois
+windscribe
 words
 xdg-desktop-portal-gnome
 xdg-user-dirs-gtk

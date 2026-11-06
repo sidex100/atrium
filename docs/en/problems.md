@@ -249,7 +249,7 @@ the English layout.
 
 ## GNOME extensions disappeared after the "no notifications" setting
 
-**Cause.** In GNOME 50, `allow-extension-installation false` also turns off loading extensions from
+**Cause.** In GNOME 50 and 51, `allow-extension-installation false` also turns off loading extensions from
 `~/.local/share/gnome-shell/extensions`. **Fix:** all extensions are installed system-wide in
 `/usr/local/share/gnome-shell/extensions`.
 

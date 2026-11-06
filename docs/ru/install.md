@@ -58,7 +58,8 @@
 Workstation. Дальше мы ставим ровно то, что нужно медиацентру, и знаем каждый пакет.
 
 1. Скачай **Fedora Everything, Network Install, x86_64** — https://fedoraproject.org/misc/ (раздел Everything)
-   (у нас Fedora 44). Запиши флешку программой Fedora Media Writer или `dd`.
+   (у нас Fedora 45: ставили 44 и обновились, см. [updates.md](updates.md)). Запиши флешку программой
+   Fedora Media Writer или `dd`.
 2. Загрузись с флешки (F7 → флешка) и пройди установщик:
    - **Language:** English (United States). Русский интерфейс GNOME не нужен, а в консоли английский
      надёжнее.
@@ -150,7 +151,7 @@ R=/root/atrium/rootfs
 общая папка, удалённый доступ).
 
 ```bash
-dnf -y install mc nano htop gnome-shell gdm gnome-session-wayland-session gnome-control-center nautilus ptyxis gnome-shell-extension-dash-to-dock xdg-desktop-portal-gnome xdg-user-dirs-gtk gnome-keyring pipewire-alsa
+dnf -y install mc nano htop gnome-shell gdm gnome-session-wayland-session gnome-control-center nautilus ptyxis gnome-shell-extension-dash-to-dock xdg-desktop-portal-gnome xdg-user-dirs-gtk pipewire-alsa
 dnf mark user tuned
 dnf remove --assumeno gnome-tour malcontent-control tuned-ppd
 ```
@@ -180,6 +181,22 @@ systemctl set-default graphical.target
   C-состояния при этом работают, в простое бокс тратит 3–4 Вт.
 - `custom.conf` — автовход `view` и **повторный вход через 5 секунд**, если сеанс GNOME упал. Сеанс
   однажды упал от бага mutter (см. [problems.md](problems.md)), и RDP вернулся сам.
+
+**Связка ключей (пароли программ).** В Fedora 45 её хранит `oo7-daemon`, он приходит вместе с `gdm`. В связке
+лежат пароль RDP (шаг 14) и ключи, которыми Chrome и Chromium шифруют куки и входы на сайты. Обычно связку
+открывает пароль входа, а у `view` его нет. Поэтому пароль связки кладём в зашифрованный systemd-credential:
+oo7 при каждом старте берёт его сам и открывает связку без окон (так советует документация oo7). Без этого
+связка останется запертой: Chrome сделает новый ключ и выйдет со всех сайтов, RDP не найдёт свой пароль.
+Делаем после первой загрузки в GNOME, до первого запуска браузера. Пароль придумай и сохрани в менеджере
+паролей: он понадобится, если ключ хоста (`/var/lib/systemd/credential.secret`) пропадёт при переустановке.
+Расшифровать credential может root — так задумано.
+
+```bash
+install -d -o view -g view -m 700 /home/view/.config/credstore.encrypted && ( read -rsp 'Keyring password: ' P1 && echo && read -rsp 'Repeat: ' P2 && echo && [ -n "$P1" ] && [ "$P1" = "$P2" ] && printf %s "$P1" | runuser -u view -- env XDG_RUNTIME_DIR=/run/user/1000 systemd-creds encrypt --user --name=oo7.keyring-encryption-password - /home/view/.config/credstore.encrypted/oo7.keyring-encryption-password ) && systemctl reboot
+```
+
+После перезагрузки в журнале oo7 должно быть `Unlocking session keyring with systemd credential`:
+`journalctl -b _SYSTEMD_USER_UNIT=oo7-daemon.service`.
 
 Пока не перезагружай: сначала диск под медиа.
 
@@ -351,27 +368,31 @@ $V gsettings get org.gnome.desktop.interface clock-format
 
 Все расширения ставим **системными** в `/usr/local/share/gnome-shell/extensions`. Причина: настройка
 `allow-extension-installation false` (GNOME не проверяет обновления и не показывает уведомлений) в
-GNOME 50 перестаёт загружать расширения из домашней папки.
+GNOME 50 и 51 перестаёт загружать расширения из домашней папки.
 
-Три чужих расширения скачиваем с extensions.gnome.org ровно тех версий, что стоят на atrium, и сверяем
-контрольные суммы:
+Три чужих расширения скачиваем ровно тех версий, что стоят на atrium, и сверяем контрольные суммы. Все три
+работают и в GNOME 50, и в 51:
 
-| Расширение | Версия | Что даёт |
-|---|---|---|
-| Executor | 30 | вывод команды в панели: загрузка CPU/GPU/VCN и скорость сети |
-| Desktop Widgets (azclock) | 21 (16.1) | текст на рабочем столе: `df` и `du` дисков |
-| GJS OSK | 53 | экранная клавиатура как в Windows |
+| Расширение | Версия | Откуда | Что даёт |
+|---|---|---|---|
+| Executor | 32 | extensions.gnome.org | вывод команды в панели: загрузка CPU/GPU/VCN и скорость сети |
+| Desktop Widgets (azclock) | 21 (16.1) | extensions.gnome.org | текст на рабочем столе: `df` и `du` дисков |
+| GJS OSK | 8761dd7 (в metadata `100000`) | релиз автора на GitHub | экранная клавиатура как в Windows |
+
+GJS OSK — с GitHub: в магазине расширений на ноябрь 2026 есть только версия до GNOME 50, а релиз автора
+поддерживает 45–51. Права файлов после распаковки выставляет `chmod` ниже: в архиве Executor
+`metadata.json` лежит с правами 600, и GNOME без этого его не загрузит.
 
 ```bash
 E=/usr/local/share/gnome-shell/extensions; mkdir -p $E; cd /tmp
-while read -r uuid tag sum; do
-  curl -fsSL -o ext.zip "https://extensions.gnome.org/download-extension/$uuid.shell-extension.zip?version_tag=$tag" &&
+while read -r uuid url sum; do
+  curl -fsSL -o ext.zip "$url" &&
   echo "$sum  ext.zip" | sha256sum -c - && rm -rf "$E/$uuid" && mkdir "$E/$uuid" && unzip -q ext.zip -d "$E/$uuid" &&
   { [ -f "$E/$uuid/schemas/gschemas.compiled" ] || glib-compile-schemas "$E/$uuid/schemas"; } && rm -f ext.zip
 done <<'EOF'
-executor@raujonas.github.io 70219 1ea446f27f7d33cf58b14fc440f33ac6ec50ae9c50c5e3dec53594a4939ddb07
-azclock@azclock.gitlab.com 75151 79b0e9fcd4d11fb86985dd64eef4d4f6310698a6c37646507812bc3e2eb5b603
-gjsosk@vishram1123.com 74269 38578bfb54880c8fec13e24783406d4c77ad047b5bc205b7a5814dc631231b6d
+executor@raujonas.github.io https://extensions.gnome.org/download-extension/executor@raujonas.github.io.shell-extension.zip?version_tag=77158 9ff49a774f5dffc099503a7ced5bf41b400b70103ce74aa94a7f32e7d4578fbf
+azclock@azclock.gitlab.com https://extensions.gnome.org/download-extension/azclock@azclock.gitlab.com.shell-extension.zip?version_tag=75151 79b0e9fcd4d11fb86985dd64eef4d4f6310698a6c37646507812bc3e2eb5b603
+gjsosk@vishram1123.com https://github.com/Vishram1123/gjs-osk/releases/download/8761dd7/gjsosk%40vishram1123_main.zip ce657a8583241fe9a5b84a3aebff85274186b5df043062f040412122dadac041
 EOF
 R=/root/atrium/rootfs
 cp -r $R/usr/local/share/gnome-shell/extensions/. $E/
@@ -863,7 +884,7 @@ printf 'root:\t\t%s\n' "$ME" >> /etc/aliases && newaliases
 postfix check && systemctl enable --now postfix
 ```
 
-Базы Postfix в Fedora 44 — `hash`, отдельного пакета lmdb не нужно.
+Базы Postfix в Fedora 44 и 45 — `hash` (Postfix собран с Berkeley DB), отдельного пакета lmdb не нужно.
 
 **Оформление писем.** Скрипты шлют письма через `/usr/local/sbin/atrium-mail`, если он есть: это наше
 HTML-оформление, в репозиторий оно не входит. Интерфейс простой: тема `-s`, служба для подписи `-u`, тело на

@@ -239,7 +239,7 @@ gnome-remote-desktop-daemon` при каждой попытке `Failed to recor
 
 ## Расширения GNOME пропали после настройки «без уведомлений»
 
-**Причина.** В GNOME 50 `allow-extension-installation false` выключает и загрузку расширений из
+**Причина.** В GNOME 50 и 51 `allow-extension-installation false` выключает и загрузку расширений из
 `~/.local/share/gnome-shell/extensions`. **Решение:** все расширения стоят системными в
 `/usr/local/share/gnome-shell/extensions`.
 

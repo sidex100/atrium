@@ -33,7 +33,7 @@ gnome-software и PackageKit **не установлены**, поэтому н�
    mesa в testing 5–7 дней — это окно и есть «Skipping». Ничего не делать: через неделю `dnf update` поставит
    обе половины вместе. Где mesa сейчас (`testing` или `stable`, с какого числа):
    ```bash
-   curl -s -H 'Accept: application/json' 'https://bodhi.fedoraproject.org/updates/?packages=mesa&releases=F44&rows_per_page=3' | python3 -c "import sys,json; [print(u['title'], u['status'], 'testing', (u.get('date_testing') or '-')[:10], 'stable', (u.get('date_stable') or '-')[:10]) for u in json.load(sys.stdin)['updates']]"
+   curl -s -H 'Accept: application/json' 'https://bodhi.fedoraproject.org/updates/?packages=mesa&releases=F45&rows_per_page=3' | python3 -c "import sys,json; [print(u['title'], u['status'], 'testing', (u.get('date_testing') or '-')[:10], 'stable', (u.get('date_stable') or '-')[:10]) for u in json.load(sys.stdin)['updates']]"
    ```
    Обратный случай — Fedora выложила mesa, а freeworld ещё нет — выглядит как пропуск самой mesa; ждать так
    же. С `--allowerasing` dnf удалит freeworld, и видео станет декодировать процессор.
@@ -52,8 +52,13 @@ gnome-software и PackageKit **не установлены**, поэтому н�
 - `/etc/NetworkManager/NetworkManager.conf`
 - `/etc/dnf/dnf.conf`
 - `/etc/chrony.conf` (сюда установщик записал наш NTP-сервер)
-- `/etc/yum.repos.d/google-chrome.repo` (его переписывает сам Chrome)
+- `/etc/postfix/main.cf`, `/etc/postfix/header_checks`, `/etc/aliases` (почта, шаг 20)
 - метки SELinux `file_contexts.local`
+
+Репозиторий Chrome с Fedora 45 лежит в `/usr/share/dnf5/repos.d/google-chrome.repo` (пакет
+`fedora-workstation-repositories`), а «включён» — наша строка в `/etc/dnf/repos.override.d/99-config_manager.repo`
+(её пишет `dnf config-manager setopt google-chrome.enabled=1`). Старый `/etc/yum.repos.d/google-chrome.repo`
+после перехода остался как `.rpmsave` — его удалили.
 
 `/etc/systemd/system.conf`, `/etc/locale.conf` и `/etc/default/grub` пакет вообще не ставит
 (`%ghost`), так что их обновление не трогает.
@@ -70,24 +75,30 @@ gnome-software и PackageKit **не установлены**, поэтому н�
 пакет поменяет свой ярлык (новый пункт меню, другая строка запуска), копия останется старой. Повторить
 команду из шага 8.
 
-Найти такие файлы после обновления:
+После каждого обновления такие файлы разбираем штатной утилитой `rpmconf` (пакет `rpmconf`): по каждому
+`.rpmnew` она показывает разницу и спрашивает — оставить наш (`N`), взять новый (`Y`) или слить (`M`), а
+второй запуск с `-c` находит «осиротевшие» `.rpmnew/.rpmsave` от удалённых пакетов и удаляет их. В системе
+таких файлов не должно оставаться: `atrium-check` предупреждает о каждом.
 
 ```bash
-find /etc -name '*.rpmnew' -o -name '*.rpmsave'
+rpmconf -a && rpmconf -a -c
+find / -xdev \( -path /proc -o -path /sys -o -path /srv \) -prune -o \( -name '*.rpmnew' -o -name '*.rpmsave' -o -name '*.rpmorig' \) -print
 ```
+
+Бывает, `rpmconf` пишет над вопросом верное имя файла (`Configuration file '/etc/postfix/main.cf'`), а в
+самом вопросе — чужое (`*** aliases`). Верить надо строке `Configuration file`.
 
 ## Что может перестать работать
 
 Наши собственные файлы пакеты не трогают, но новые версии программ могут их «не понять».
 
-1. **Fedora 45 (GNOME 51) — главный риск.** GNOME выключает расширения, у которых в `metadata.json`
-   нет его версии:
-   - наши три (`atrium-lock`, `atrium-brightness-value`, `atrium-no-dnd-icon`) объявляют только 50;
-   - Executor (v30) и GJS OSK (v53) — до 50;
-   - Desktop Widgets (v21) уже поддерживает 51;
-   - Dash to Dock, Freon и Just Perfection стоят пакетами Fedora и обновятся вместе с системой.
+1. **Новая версия Fedora = новый GNOME — главный риск.** GNOME выключает расширения, у которых в
+   `metadata.json` нет его версии. Сейчас все наши объявляют GNOME 51:
+   - наши три (`atrium-lock`, `atrium-brightness-value`, `atrium-no-dnd-icon`) — 50 и 51;
+   - Executor (v32), GJS OSK (релиз 8761dd7 с GitHub) и Desktop Widgets (v21) — до 51;
+   - Dash to Dock, Freon и Just Perfection стоят пакетами Fedora и обновляются вместе с системой.
 2. **Наши расширения используют внутренности gnome-shell**: ползунок яркости, меню Freon, виджеты
-   Desktop Widgets, значок «Не беспокоить». Они могут сломаться и на обновлении внутри GNOME 50.x. Тогда
+   Desktop Widgets, значок «Не беспокоить». Они могут сломаться и на обновлении внутри GNOME 51.x. Тогда
    расширение получает статус ERROR, гаджет просто перестаёт быть заблокированным или показывать число.
    Сеанс при этом не падает.
 3. **Заставка** гасит экран через `org.gnome.Mutter.DisplayConfig.PowerSaveMode` и следит за простоем
@@ -188,19 +199,49 @@ runuser -u view -- $E /opt/urserver/urserver-stop; runuser -u view -- $E /opt/ur
 Если `--dry-run` ругается, производитель поменял эти файлы. Тогда правки нужно переносить руками: что
 именно делает патч, описано в установке, шаг 14. Экранные клавиатуры собирает `src/urserver/build.py`.
 
-## Переход на Fedora 45
+## Переход на новую версию Fedora
 
-Не в день выхода. Сначала:
+Так перешли с 44 на 45 (06.11.2026). Не в день выхода. Всё, что можно, делаем и проверяем ещё на старой
+версии: отката назад Fedora не умеет.
 
-1. На extensions.gnome.org проверь, вышли ли Executor и GJS OSK с поддержкой GNOME 51.
-2. В `metadata.json` наших трёх расширений добавь `"51"` в `shell-version`, но только после проверки на
-   GNOME 51: они используют внутренности оболочки.
-3. Проверь, что у RPM Fusion есть репозиторий для 45 и `mesa-va-drivers-freeworld` в нём.
+**Подготовка (на старой версии, с перезагрузкой и проверкой после каждого пункта):**
 
-Сам переход штатный:
+1. Все расширения должны объявлять новый GNOME. Чужие — новые версии (на 45: Executor 32 с
+   extensions.gnome.org, GJS OSK — релиз с GitHub, см. [установку](install.md), шаг 10). Наши три — `"51"` в
+   `shell-version`, но сначала сверить с исходниками нового gnome-shell те места, куда они лезут (на 51.1
+   сверено: ползунок яркости и его подпись, OSD, быстрое меню, значок «Не беспокоить» — без изменений). Новые
+   версии ставим ещё на старом GNOME и проверяем, что настройки на месте (`dconf dump` до и после).
+2. У RPM Fusion есть репозиторий новой версии, и `mesa-va-drivers-freeworld` в нём совпадает с mesa Fedora.
+3. Пробный прогон — ничего не ставит, показывает, что заменится и удалится:
+   `dnf --releasever=45 --assumeno distro-sync`.
+4. **Связка ключей.** С Fedora 45 её хранит oo7 вместо gnome-keyring. При автовходе ему нужен пароль связки
+   в systemd-credential ([установка](install.md), шаг 6). Без него oo7 со второй загрузки держит связку
+   запертой: Chrome выходит со всех сайтов, RDP не находит пароль. Credential кладём заранее. Связку,
+   которую gnome-keyring создал под именем `Default_Keyring`, переименовываем в стандартную `login` —
+   **только прямо перед перезагрузкой в обновление**: gnome-keyring связку `login` при автовходе запирает.
+
+**Переход:**
 
 ```bash
-dnf upgrade --refresh && dnf system-upgrade download --releasever=45 && dnf offline reboot
+systemctl disable --now atrium-update.timer && dnf system-upgrade download --releasever=45
+K=/home/view/.local/share/keyrings && mv -f $K/Default_Keyring.keyring $K/login.keyring && printf login > $K/default && dnf5 offline reboot
 ```
 
-После перехода — проверка выше и `dnf repolist` (RPM Fusion и Google Chrome должны быть на 45).
+Новый ключ Fedora (`Importing OpenPGP key`) сверить с https://fedoraproject.org/security/. Бокс ставит
+обновление сам (15–30 минут) и перезагружается в новую версию.
+
+**После перехода, до второй перезагрузки:**
+
+1. `atrium-check boot` — Problems: none.
+2. Журнал oo7: `Unlocking session keyring with systemd credential` и `Successfully migrated v0 keyring
+   'login'`; связка открыта (`Locked false`), RDP и Chrome работают.
+3. Конфиги: `rpmconf -a && rpmconf -a -c` (на 45 было два файла: `postfix/main.cf.rpmnew` — оставили наш и
+   подняли `compatibility_level` до 3.11; `google-chrome.repo.rpmsave` — удалили).
+4. Пакеты: `remove-retired-packages 44` (на 45 удалять было нечего), `dnf autoremove --assumeno` и, если
+   список понятный, `dnf autoremove` (на 45 ушли gcr3 от gnome-keyring и ещё 7 ненужных), `dnf clean all`.
+   «Битые» симлинки из `symlinks -r /usr` не трогать: все они принадлежат установленным пакетам.
+5. Flatpak: `flatpak update`, неиспользуемые среды — `flatpak uninstall --unused`.
+6. Мусор: старые `.bak`, старая связка открытым текстом (`login.keyring` и `login.keyring.migrated` рядом с
+   `v1/`) — удалить, когда всё проверено. В конце `find` из раздела выше — ноль.
+7. Вторая перезагрузка: в журнале oo7 `Unlocked keyring 'login'` — связка открылась паролем из credential.
+8. `systemctl enable --now atrium-update.timer`.

@@ -85,7 +85,7 @@ Inside it is a full Linux server that runs around the clock.
 | Network | 2.5 GbE, Wi-Fi 6, Bluetooth |
 | TV | LG OLED65C3 over HDMI 2.1, a passive Ultra High Speed (48G) cable |
 | Sound | SMSL USB DAC |
-| Software | Fedora 44, GNOME 50 (Wayland), kernel 7.2, Mesa 26.2 |
+| Software | Fedora 45, GNOME 51 (Wayland), kernel 7.2, Mesa 26.2 |
 
 Hardware decoding: H.264, HEVC (incl. 10-bit), VP9 and AV1.
 
@@ -245,7 +245,7 @@ What is **not** here:
 | Сеть | 2,5 GbE, Wi-Fi 6, Bluetooth |
 | ТВ | LG OLED65C3 по HDMI 2.1, пассивный кабель Ultra High Speed (48G) |
 | Звук | USB-ЦАП SMSL |
-| Софт | Fedora 44, GNOME 50 (Wayland), ядро 7.2, Mesa 26.2 |
+| Софт | Fedora 45, GNOME 51 (Wayland), ядро 7.2, Mesa 26.2 |
 
 Аппаратно декодируются H.264, HEVC (вкл. 10 бит), VP9 и AV1.
 

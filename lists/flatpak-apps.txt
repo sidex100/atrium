@@ -1,4 +1,6 @@
+com.discordapp.Discord
 com.moonlight_stream.Moonlight
 com.spotify.Client
 com.valvesoftware.SteamLink
+dev.fredol.open-tv
 net.retrodeck.retrodeck

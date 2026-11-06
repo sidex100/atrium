@@ -35,7 +35,7 @@ Three rules:
    is the "Skipping". Do nothing: in a week `dnf update` installs both halves together. Where mesa is right now
    (`testing` or `stable`, since which date):
    ```bash
-   curl -s -H 'Accept: application/json' 'https://bodhi.fedoraproject.org/updates/?packages=mesa&releases=F44&rows_per_page=3' | python3 -c "import sys,json; [print(u['title'], u['status'], 'testing', (u.get('date_testing') or '-')[:10], 'stable', (u.get('date_stable') or '-')[:10]) for u in json.load(sys.stdin)['updates']]"
+   curl -s -H 'Accept: application/json' 'https://bodhi.fedoraproject.org/updates/?packages=mesa&releases=F45&rows_per_page=3' | python3 -c "import sys,json; [print(u['title'], u['status'], 'testing', (u.get('date_testing') or '-')[:10], 'stable', (u.get('date_stable') or '-')[:10]) for u in json.load(sys.stdin)['updates']]"
    ```
    The opposite case — Fedora has published mesa but freeworld is not there yet — looks like mesa itself being
    skipped; wait the same way. With `--allowerasing` dnf removes freeworld, and video is decoded by the CPU.
@@ -54,8 +54,13 @@ Checked with `rpm -Va` on atrium (2026-10-13): of all package files, only these 
 - `/etc/NetworkManager/NetworkManager.conf`
 - `/etc/dnf/dnf.conf`
 - `/etc/chrony.conf` (the installer wrote our NTP server here)
-- `/etc/yum.repos.d/google-chrome.repo` (Chrome itself rewrites it)
+- `/etc/postfix/main.cf`, `/etc/postfix/header_checks`, `/etc/aliases` (mail, step 20)
 - SELinux labels `file_contexts.local`
+
+Since Fedora 45 the Chrome repository lives in `/usr/share/dnf5/repos.d/google-chrome.repo` (the
+`fedora-workstation-repositories` package), and "enabled" is our line in
+`/etc/dnf/repos.override.d/99-config_manager.repo` (written by `dnf config-manager setopt google-chrome.enabled=1`).
+The old `/etc/yum.repos.d/google-chrome.repo` was left as `.rpmsave` after the upgrade and was removed.
 
 `/etc/systemd/system.conf`, `/etc/locale.conf` and `/etc/default/grub` are not installed by the package at
 all (`%ghost`), so updates do not touch them.
@@ -72,25 +77,31 @@ The other way round, the TV user's copies of the Chrome and Chromium launchers
 updated**: if a package changes its launcher (a new menu item, a different launch line), the copy stays
 old. Run the step 8 command again.
 
-Find such files after an update:
+After every update we sort such files out with the standard `rpmconf` tool (the `rpmconf` package): for each
+`.rpmnew` it shows the difference and asks — keep ours (`N`), take the new one (`Y`) or merge (`M`), and a
+second run with `-c` finds "orphaned" `.rpmnew/.rpmsave` from removed packages and deletes them. No such
+files should stay in the system: `atrium-check` warns about each one.
 
 ```bash
-find /etc -name '*.rpmnew' -o -name '*.rpmsave'
+rpmconf -a && rpmconf -a -c
+find / -xdev \( -path /proc -o -path /sys -o -path /srv \) -prune -o \( -name '*.rpmnew' -o -name '*.rpmsave' -o -name '*.rpmorig' \) -print
 ```
+
+Sometimes `rpmconf` prints the right file name above the question (`Configuration file '/etc/postfix/main.cf'`)
+and a different one in the question itself (`*** aliases`). Trust the `Configuration file` line.
 
 ## What can stop working
 
 Packages do not touch our own files, but new versions of programs may fail to "understand" them.
 
-1. **Fedora 45 (GNOME 51) is the main risk.** GNOME disables extensions whose `metadata.json` does not
-   list its version:
-   - our three (`atrium-lock`, `atrium-brightness-value`, `atrium-no-dnd-icon`) declare only 50;
-   - Executor (v30) and GJS OSK (v53) — up to 50;
-   - Desktop Widgets (v21) already supports 51;
-   - Dash to Dock, Freon and Just Perfection are installed as Fedora packages and will be updated together
+1. **A new Fedora release means a new GNOME — the main risk.** GNOME disables extensions whose
+   `metadata.json` does not list its version. Right now all of ours declare GNOME 51:
+   - our three (`atrium-lock`, `atrium-brightness-value`, `atrium-no-dnd-icon`) — 50 and 51;
+   - Executor (v32), GJS OSK (release 8761dd7 from GitHub) and Desktop Widgets (v21) — up to 51;
+   - Dash to Dock, Freon and Just Perfection are installed as Fedora packages and are updated together
      with the system.
 2. **Our extensions use gnome-shell internals**: the brightness slider, the Freon menu, the Desktop
-   Widgets gadgets, the "Do Not Disturb" icon. They can break even on an update within GNOME 50.x. Then
+   Widgets gadgets, the "Do Not Disturb" icon. They can break even on an update within GNOME 51.x. Then
    the extension gets the ERROR state, and the gadget simply stops being locked or stops showing the
    number. The session does not crash.
 3. **The screensaver** turns the screen off through `org.gnome.Mutter.DisplayConfig.PowerSaveMode` and
@@ -194,19 +205,53 @@ If `--dry-run` complains, the vendor has changed these files. Then the changes h
 hand: what exactly the patch does is described in install step 14. The on-screen keyboards are built by
 `src/urserver/build.py`.
 
-## Moving to Fedora 45
+## Moving to a new Fedora release
 
-Not on release day. First:
+This is how we moved from 44 to 45 (2026-11-06). Not on release day. Everything that can be done and checked
+is done on the old release first: Fedora cannot roll back.
 
-1. On extensions.gnome.org, check whether Executor and GJS OSK have been released with GNOME 51 support.
-2. In the `metadata.json` of our three extensions, add `"51"` to `shell-version`, but only after testing
-   on GNOME 51: they use shell internals.
-3. Check that RPM Fusion has a repository for 45 and that `mesa-va-drivers-freeworld` is in it.
+**Preparation (on the old release, with a reboot and a check after each item):**
 
-The upgrade itself is the standard one:
+1. All extensions must declare the new GNOME. Third-party ones — new versions (for 45: Executor 32 from
+   extensions.gnome.org, GJS OSK — the GitHub release, see [installation](install.md), step 10). Our three —
+   `"51"` in `shell-version`, but first check the new gnome-shell sources at the places they reach into
+   (checked for 51.1: the brightness slider and its label, the OSD, quick settings, the "Do Not Disturb"
+   icon — unchanged). Install the new versions while still on the old GNOME and check that the settings are
+   intact (`dconf dump` before and after).
+2. RPM Fusion has a repository for the new release, and `mesa-va-drivers-freeworld` there matches Fedora's mesa.
+3. A dry run — installs nothing, shows what gets replaced and removed:
+   `dnf --releasever=45 --assumeno distro-sync`.
+4. **The keyring.** Since Fedora 45 it is kept by oo7 instead of gnome-keyring. With autologin oo7 needs the
+   keyring password in a systemd credential ([installation](install.md), step 6). Without it, from the second
+   boot on oo7 keeps the keyring locked: Chrome logs out of every site, RDP does not find its password. Put the
+   credential in place beforehand. Rename the keyring that gnome-keyring created as `Default_Keyring` to the
+   standard `login` — **only right before the reboot into the upgrade**: with autologin gnome-keyring locks a
+   keyring named `login`.
+
+**The upgrade:**
 
 ```bash
-dnf upgrade --refresh && dnf system-upgrade download --releasever=45 && dnf offline reboot
+systemctl disable --now atrium-update.timer && dnf system-upgrade download --releasever=45
+K=/home/view/.local/share/keyrings && mv -f $K/Default_Keyring.keyring $K/login.keyring && printf login > $K/default && dnf5 offline reboot
 ```
 
-After the upgrade — the check above and `dnf repolist` (RPM Fusion and Google Chrome should be on 45).
+Check the new Fedora key (`Importing OpenPGP key`) against https://fedoraproject.org/security/. The box
+installs the upgrade by itself (15–30 minutes) and reboots into the new release.
+
+**After the upgrade, before the second reboot:**
+
+1. `atrium-check boot` — Problems: none.
+2. The oo7 log: `Unlocking session keyring with systemd credential` and `Successfully migrated v0 keyring
+   'login'`; the keyring is open (`Locked false`), RDP and Chrome work.
+3. Config files: `rpmconf -a && rpmconf -a -c` (on 45 there were two: `postfix/main.cf.rpmnew` — kept ours and
+   raised `compatibility_level` to 3.11; `google-chrome.repo.rpmsave` — removed).
+4. Packages: `remove-retired-packages 44` (nothing to remove on 45), `dnf autoremove --assumeno` and, if the
+   list makes sense, `dnf autoremove` (on 45 it took gcr3 from gnome-keyring and 7 more unused ones),
+   `dnf clean all`. Leave the "dangling" symlinks from `symlinks -r /usr` alone: all of them belong to
+   installed packages.
+5. Flatpak: `flatpak update`, unused runtimes — `flatpak uninstall --unused`.
+6. Leftovers: old `.bak` files, the old plain-text keyring (`login.keyring` and `login.keyring.migrated` next
+   to `v1/`) — delete once everything is checked. At the end the `find` from the section above shows zero.
+7. The second reboot: the oo7 log says `Unlocked keyring 'login'` — the keyring opened with the password from
+   the credential.
+8. `systemctl enable --now atrium-update.timer`.
