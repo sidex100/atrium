@@ -865,7 +865,8 @@ from the computer connects; plug it back — the picture comes back by itself.
 - **reboot** — when `dnf needs-restarting` asks for one (kernel, glibc, systemd, firmware) or the kernel,
   graphics or sound of the GNOME session were updated: without a reboot GNOME keeps the old ones. The report
   "rebooting" leaves before the reboot (we wait for Postfix up to 10 minutes). If the kernel of the next boot
-  misses our parameters or the TV EDID, the box does not reboot and says so. If somebody started using the
+  misses our parameters or the TV EDID, the box does not reboot and says so; the same when
+  `dnf needs-restarting` itself fails (the report is a WARNING with the dnf error). If somebody started using the
   box during the install, the reboot waits until it is free;
 - **a mail at every shutdown and reboot** (except the reboot after an update — its report already said so)
   and **a report after every boot**: was the shutdown clean, what is in pstore, the CPU reset reason,

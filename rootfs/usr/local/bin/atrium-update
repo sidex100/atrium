@@ -33,6 +33,7 @@ SESSION_PKGS='^(kernel(-core|-modules.*)?|mesa-.*|libdrm|mutter|gnome-shell|gnom
 RA_DIR=/home/$VIEW/.var/app/net.retrodeck.retrodeck/config/retroarch
 TAG="[$(hostname -s)]"
 TEST=""                                     # " (TEST)" in test mode
+FAIL=""                                     # what made the search for updates fail
 
 send() {                                    # $1 subject without the tag, $2 body
     local body=$2
@@ -96,13 +97,16 @@ $(kv Problems none)"
     exit 0
 }
 
-find_updates() {                            # sets DNF_LIST FP_LIST N_DNF N_FP; 1 = could not look
+find_updates() {                            # sets DNF_LIST FP_LIST N_DNF N_FP; 1 = could not look (FAIL says why)
     local out rc
     out=$(dnf -q check-upgrade --refresh 2>>"$LOG"); rc=$?
-    [ "$rc" = 0 ] || [ "$rc" = 100 ] || return 1
+    if [ "$rc" != 0 ] && [ "$rc" != 100 ]; then FAIL="dnf check-upgrade, exit code $rc"; return 1; fi
     DNF_LIST=$(awk 'NF >= 3 && $1 ~ /\./ {print $1 " " $2}' <<< "$out")
-    FP_LIST=$(flatpak remote-ls --updates --system --columns=application,version 2>>"$LOG" | tr '\t' ' ') || return 1
+    FP_LIST=$(set -o pipefail; flatpak remote-ls --updates --system --columns=application,version 2>>"$LOG" | tr '\t' ' '); rc=$?
+    if [ "$rc" != 0 ]; then FAIL="flatpak remote-ls, exit code $rc"; return 1; fi
     N_DNF=$(grep -c . <<< "$DNF_LIST"); N_FP=$(grep -c . <<< "$FP_LIST")
+    # 2026-11-01: grep -c exits 1 on a count of 0, so with no flatpak updates every search counted as failed
+    return 0
 }
 
 rpm_list() { rpm -qa --qf '%{NAME}.%{ARCH} %{VERSION}-%{RELEASE}\n' | LC_ALL=C sort; }
@@ -116,7 +120,7 @@ backup_retroarch() {                        # dated copies before a RetroDECK up
 }
 
 install_updates() {
-    local total=$((N_DNF + N_FP)) before changed frc=0 drc=0 chk crc reboot="" s why subj body lead pk fp
+    local total=$((N_DNF + N_FP)) before changed frc=0 drc=0 chk crc reboot="" s why subj body lead pk fp nr nrc nrerr=""
     pk=""; [ "$N_DNF" != 0 ] && pk="dnf packages:
 $(indent <<< "$DNF_LIST")
 "
@@ -161,7 +165,14 @@ $(indent <<< "${changed:-nothing}")"
         return
     fi
 
-    dnf -C needs-restarting >/dev/null 2>&1; [ $? = 1 ] && reboot="core libraries or services (dnf needs-restarting)"
+    # 2026-11-07: no -C, the answer from --json. needs-restarting loads filelists, "dnf update" does not fetch
+    # them: with -C it failed ("no cache for repository") with exit 1, the code of "reboot needed" - false reboot
+    nr=$(dnf needs-restarting --json 2>&1); nrc=$?
+    case $nr in
+        *'"reboot_required":true'*) reboot="core libraries or services (dnf needs-restarting)" ;;
+        *'"reboot_required":false'*) ;;
+        *) nrerr="dnf needs-restarting failed (exit $nrc: $(tail -1 <<< "$nr"))" ;;
+    esac
     s=$(awk '{print $1}' <<< "$changed" | grep -E "$SESSION_PKGS" | sed 's/\.[^.]*$//' | sort -u | paste -sd' ' -)
     [ -n "$s" ] && reboot="${reboot:+$reboot; }session: $(sed 's/ /, /g' <<< "$s")"
     lead="Updates installed and checked."
@@ -169,6 +180,10 @@ $(indent <<< "${changed:-nothing}")"
         subj="OK: $total updates installed, no reboot needed"
         [ "$crc" != 0 ] && subj="WARNING: $total updates installed, no reboot needed - the check found problems"
         reboot="not needed"
+        if [ -n "$nrerr" ]; then
+            subj="WARNING: $total updates installed, no reboot - could not check if one is needed"
+            reboot="not done: $nrerr"
+        fi
     elif [ "$crc" = 2 ]; then
         subj="WARNING: $total updates installed, reboot NOT done - the kernel of the next boot is not ready"
         lead="$lead The reboot is NOT done: the kernel of the next boot misses our parameters or the TV EDID (see Next boot). The box keeps running the old kernel; fix it, then reboot by hand."
@@ -216,11 +231,13 @@ run() {
     : > "$LOG"
     if ! find_updates; then
         n=$(( $(cat "$STATE/errors" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$STATE/errors"
-        echo "could not look for updates ($n in a row), see $LOG"
-        [ "$n" = "$ERR_MAIL" ] && send "ERROR: could not look for updates" "dnf or flatpak could not look for updates $n times in a row (every 10 min). No internet, or a repository is down. The tries go on every 10 min; the next mail about it comes only after a search has worked again and failed $ERR_MAIL times anew.
+        echo "could not look for updates ($n in a row): $FAIL"
+        [ "$n" = "$ERR_MAIL" ] && send "ERROR: could not look for updates" "The search for updates failed $n times in a row (every 10 min), nothing was installed. The tries go on every 10 min; the next mail about it comes only after a search has worked again and failed $ERR_MAIL times anew.
+
+$(kv Failed "$FAIL")
 
 End of the log ($LOG):
-$(tail -20 "$LOG" | indent)"
+$(tail -20 "$LOG" | indent | grep . || echo "  (empty)")"
         exit 0
     fi
     rm -f "$STATE/errors"

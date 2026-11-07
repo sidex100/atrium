@@ -275,3 +275,16 @@ mesa-va-drivers-freeworld-X …`, the package lands in `Skipping`, everything el
 Fedora still keeps that mesa in testing (5–7 days). The pair on the box stays as it is and keeps working.
 **Fix:** do nothing, in a week both halves install together; do not touch `--allowerasing`. Details and how to
 check the timing — [updates](updates.md), rule 2. We had this on 19–21.10 with mesa 26.2.5.
+
+## The box rebooted after an update that installed only small things
+
+**Symptom.** The automatic update installed packages that need no reboot (tzdata, a library, a Python module),
+yet a mail `REBOOT: … rebooting now` came with the reason `core libraries or services (dnf needs-restarting)`.
+
+**Cause.** A bug in an early `atrium-update`: it asked `dnf -C needs-restarting` (cache only). That command needs
+the file lists of the repositories (filelists), and `dnf update` does not download them — dnf fails with
+`Cache-only enabled but no cache for repository "updates"` and exits with code 1. dnf returns the same code 1 for
+"a reboot is needed", so the script rebooted the box. **Fix:** the current `atrium-update` asks without `-C` (dnf
+fetches the lists itself, a few seconds) and takes the answer from `--json` (`"reboot_required"`); if dnf gives no
+answer, the box does not reboot and a WARNING with the error comes. To check by hand: `dnf needs-restarting`. We
+had this on 07.11.
