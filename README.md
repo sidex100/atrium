@@ -136,7 +136,7 @@ They change over time: in 2025 the same SSD cost $100–180.
 rootfs/      our files at exactly the paths they have on atrium:
              rootfs/etc/samba/smb.conf  ->  /etc/samba/smb.conf
              (configs, services, scripts, our GNOME extensions, wallpaper, TV user settings)
-patches/     the Unified Remote patch (only our changes on top of the vendor files)
+patches/     patches for Unified Remote and GJS OSK (only our changes on top of their files)
 src/         sources and extras:
   dconf/       GNOME settings of the TV user
   wallpaper/   wallpaper generator; variants/ - the earlier wallpapers (robot, day painting)
@@ -296,7 +296,7 @@ What is **not** here:
 rootfs/      наши файлы ровно по тем путям, где они лежат на atrium:
              rootfs/etc/samba/smb.conf  ->  /etc/samba/smb.conf
              (конфиги, службы, скрипты, наши расширения GNOME, обои, настройки пользователя ТВ)
-patches/     патч для Unified Remote (только наши правки поверх файлов производителя)
+patches/     патчи для Unified Remote и GJS OSK (только наши правки поверх их файлов)
 src/         исходники и дополнения:
   dconf/       настройки GNOME пользователя ТВ
   wallpaper/   генератор обоев; variants/ - прежние обои (робот, дневная картина)

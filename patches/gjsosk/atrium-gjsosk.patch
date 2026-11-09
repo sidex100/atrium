@@ -1,0 +1,56 @@
+--- a/extension.js	(GJS OSK 8761dd7)
++++ b/extension.js	(atrium)
+@@ -27,6 +27,33 @@
+ }
+ import { Extension, gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
+ 
++// atrium 2026-11-09: language button in the top bar, right of the settings button. The label is the
++// current input source (EN, RU); a press switches to the next one. The keyboard is rebuilt on every
++// source change (current-source-changed -> refresh), so the label always shows the active layout.
++// A plain function, not a Keyboard method: Keyboard methods are wrapped into async functions by
++// withErrorHandler and would return a Promise.
++function atriumLangButton(kb) {
++    const ism = InputSourceManager.getInputSourceManager();
++    const btn = new St.Button({
++        x_expand: true,
++        y_expand: true,
++        label: (ism.currentSource?.shortName ?? "").toUpperCase()
++    });
++    btn.add_style_class_name("key");
++    const next = () => {
++        const sources = Object.values(ism.inputSources ?? {});
++        const cur = ism.currentSource;
++        if (sources.length < 2 || !cur) return;
++        sources[(cur.index + 1) % sources.length].activate(true);
++    };
++    btn.connect("button-press-event", next);
++    btn.connect("touch-event", () => {
++        if (Clutter.get_current_event().type() == Clutter.EventType.TOUCH_BEGIN) next();
++    });
++    kb.keys.push(btn);
++    return btn;
++}
++
+ const State = {
+     OPENED: 0,
+     CLOSED: 1,
+@@ -1455,6 +1482,9 @@
+             } else {
+                 mvBtnStartLeft = 0
+             }
++            // atrium 2026-11-09: language button right of the settings button
++            gridLeft.attach(atriumLangButton(this), mvBtnStartLeft, 0, 2 * topBtnWidth, 3)
++            mvBtnStartLeft += 2 * topBtnWidth
+ 
+             if (currentLayout[currentLayout.length - 1].close) {
+                 const closeBtn = new St.Button({
+@@ -1566,6 +1596,9 @@
+             } else {
+                 mvBtnStartLeft = 0
+             }
++            // atrium 2026-11-09: language button right of the settings button
++            grid.attach(atriumLangButton(this), mvBtnStartLeft, 0, 2 * topBtnWidth, 3)
++            mvBtnStartLeft += 2 * topBtnWidth
+             if (currentLayout[currentLayout.length - 1].close) {
+                 const closeBtn = new St.Button({
+                     x_expand: true,

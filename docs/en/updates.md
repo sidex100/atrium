@@ -71,6 +71,7 @@ all (`%ghost`), so updates do not touch them.
 |---|---|---|---|
 | `/etc/chromium/master_preferences` | if Fedora changes this file in the chromium package; ours goes to `.rpmsave` | the Fedora start page, but only in a **new** Chromium profile | `install -m 644 /root/atrium/rootfs/etc/chromium/master_preferences /etc/chromium/` |
 | 5 remotes in `/opt/urserver/remotes` | when a new version of urserver is installed | a short tap does not click; capital letters, Cyrillic and symbols are not typed | apply the patch again (below) |
+| GJS OSK `extension.js` | when a new version of GJS OSK is installed | no EN/RU button on the on-screen keyboard | apply the patch again (below) |
 
 The other way round, the TV user's copies of the Chrome and Chromium launchers
 (`~/.local/share/applications/{google-chrome,chromium-browser}.desktop`, Russian UI, step 8) are **not
@@ -163,6 +164,7 @@ What it checks:
 - the copies of the Chrome and Chromium menu entries match the system ones except the Exec line;
 - Transmission settings: TCP only, no DHT and LPD, encryption required, stop after download;
 - the Unified Remote patch — 5 remotes;
+- the GJS OSK patch — the EN/RU button;
 - our changes in `retroarch.cfg`;
 - with `boot`: the kernel booted with our parameters, the TV output (HDMI 2.1 FRL or "TV off").
 
@@ -204,6 +206,19 @@ runuser -u view -- $E /opt/urserver/urserver-stop; runuser -u view -- $E /opt/ur
 If `--dry-run` complains, the vendor has changed these files. Then the changes have to be carried over by
 hand: what exactly the patch does is described in install step 14. The on-screen keyboards are built by
 `src/urserver/build.py`.
+
+## Restoring the GJS OSK patch
+
+After a new version of GJS OSK is installed (the EN/RU button; `atrium-check` says `GJS OSK: patch NOT in
+place`):
+
+```bash
+cd /usr/local/share/gnome-shell/extensions/gjsosk@vishram1123.com && patch -p1 --dry-run < /root/atrium/patches/gjsosk/atrium-gjsosk.patch && patch -p1 --backup --suffix=.orig < /root/atrium/patches/gjsosk/atrium-gjsosk.patch
+```
+
+The button shows up from the next login (reboot). If `--dry-run` complains, the author has rewritten the
+keyboard's top bar: carry the change over by hand — the function `atriumLangButton` and its call right of the
+settings button, in both branches of `buildUI` (the normal and the split keyboard).
 
 ## Moving to a new Fedora release
 

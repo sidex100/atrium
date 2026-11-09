@@ -69,6 +69,7 @@ gnome-software и PackageKit **не установлены**, поэтому н�
 |---|---|---|---|
 | `/etc/chromium/master_preferences` | если Fedora поменяет этот файл в пакете chromium; наш уйдёт в `.rpmsave` | стартовая страница Fedora, но только в **новом** профиле Chromium | `install -m 644 /root/atrium/rootfs/etc/chromium/master_preferences /etc/chromium/` |
 | 5 пультов в `/opt/urserver/remotes` | при установке новой версии urserver | короткий тап не кликает; заглавные, кириллица и символы не печатаются | патч заново (ниже) |
+| `extension.js` GJS OSK | при установке новой версии GJS OSK | нет кнопки EN/RU на экранной клавиатуре | патч заново (ниже) |
 
 Наоборот, **не обновятся** копии ярлыков Chrome и Chromium у пользователя ТВ
 (`~/.local/share/applications/{google-chrome,chromium-browser}.desktop`, русский интерфейс, шаг 8): если
@@ -158,6 +159,7 @@ atrium-check boot   # после загрузки: ещё ядро, с кото�
 - копии ярлыков Chrome и Chromium совпадают с системными, кроме строки Exec;
 - настройки Transmission: только TCP, без DHT и LPD, шифрование обязательно, остановка после закачки;
 - патч Unified Remote — 5 пультов;
+- патч GJS OSK — кнопка EN/RU;
 - наши правки в `retroarch.cfg`;
 - с `boot`: ядро загружено с нашими параметрами, вывод на ТВ (HDMI 2.1 FRL или «ТВ выключен»).
 
@@ -198,6 +200,18 @@ runuser -u view -- $E /opt/urserver/urserver-stop; runuser -u view -- $E /opt/ur
 
 Если `--dry-run` ругается, производитель поменял эти файлы. Тогда правки нужно переносить руками: что
 именно делает патч, описано в установке, шаг 14. Экранные клавиатуры собирает `src/urserver/build.py`.
+
+## Вернуть патч GJS OSK
+
+После установки новой версии GJS OSK (кнопка EN/RU; `atrium-check` пишет `GJS OSK: patch NOT in place`):
+
+```bash
+cd /usr/local/share/gnome-shell/extensions/gjsosk@vishram1123.com && patch -p1 --dry-run < /root/atrium/patches/gjsosk/atrium-gjsosk.patch && patch -p1 --backup --suffix=.orig < /root/atrium/patches/gjsosk/atrium-gjsosk.patch
+```
+
+Кнопка появится со следующего входа (перезагрузка). Если `--dry-run` ругается, автор переписал верхнюю
+полосу клавиатуры: правку переносить руками — функция `atriumLangButton` и её вызов справа от кнопки
+настроек, в обеих ветках `buildUI` (обычная и разделённая клавиатура).
 
 ## Переход на новую версию Fedora
 

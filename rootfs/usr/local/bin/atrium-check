@@ -20,6 +20,8 @@ EDID=edid/atrium-tv.bin
 [ -f "$KEEP" ] && PARAMS="$PARAMS drm.edid_firmware=HDMI-A-1:$EDID video=HDMI-A-1:e"
 NPARAMS=$(wc -w <<< "$PARAMS")
 UR_PATCHED=5                                # remotes changed by patches/urserver
+# 2026-11-09: GJS OSK with our EN/RU button (patches/gjsosk); an update of the extension brings back the original
+OSK_JS=/usr/local/share/gnome-shell/extensions/gjsosk@vishram1123.com/extension.js
 RA_CFG=/home/$VIEW/.var/app/net.retrodeck.retrodeck/config/retroarch/retroarch.cfg
 TR_SETTINGS=/var/lib/transmission/.config/transmission-daemon/settings.json
 
@@ -153,6 +155,8 @@ print(" ".join(bad))' "$TR_SETTINGS" 2>/dev/null || echo "settings.json not read
     n=$(rpm -V urserver 2>/dev/null | grep -c remotes)
     if [ "$n" = "$UR_PATCHED" ]; then out "Unified Remote" "patch in place ($n remotes)"
     else out "Unified Remote" "patch NOT in place ($n of $UR_PATCHED remotes changed)"; problem "Unified Remote patch"; fi
+    if grep -q atriumLangButton "$OSK_JS" 2>/dev/null; then out "GJS OSK" "patch in place (EN/RU button)"
+    else out "GJS OSK" "patch NOT in place (no EN/RU button)"; problem "GJS OSK patch"; fi
     if [ -f "$RA_CFG" ]; then
         t=$(awk -F' = ' '
             $1 == "video_fullscreen_x" && $2 != "\"1536\"" || $1 == "video_fullscreen_y" && $2 != "\"864\"" ||

@@ -407,6 +407,17 @@ cp -r $R/usr/local/share/gnome-shell/extensions/. $E/
 chown -R root:root $E && chmod -R u=rwX,go=rX $E && restorecon -R $E && ls $E
 ```
 
+Our patch `patches/gjsosk/atrium-gjsosk.patch` adds a language button to GJS OSK: in the top bar of the
+keyboard, right of the settings button (above F1). It shows the current language (EN, RU), a press switches
+to the next one; the label also changes when Alt+Shift switches. GJS OSK has no such button of its own. The
+key icons are off (`show-icons false` in `view-atrium.ini`): the keys say Tab, Caps, Shift, Ctrl, Super,
+Alt, Enter, Backspace instead. The patch goes on after unpacking and after every update of GJS OSK; GNOME
+picks it up from the next login (reboot):
+
+```bash
+cd /usr/local/share/gnome-shell/extensions/gjsosk@vishram1123.com && patch -p1 --backup --suffix=.orig < /root/atrium/patches/gjsosk/atrium-gjsosk.patch
+```
+
 The `atrium-sysload` service writes CPU/GPU/VCN load and network speed to `/run/atrium-sysload/` once a
 second, and Executor shows these lines in the panel. The service runs as a throwaway user with no
 privileges, with no network and with a read-only system. It takes its data from kernel counters:
@@ -934,7 +945,7 @@ systemctl enable atrium-boot-notify.timer
 **Check, then switch on.**
 
 ```bash
-atrium-check                # 15 checks, the last line: Problems:  none
+atrium-check                # 16 checks, the last line: Problems:  none
 atrium-update busy          # free, or in use: why
 atrium-update test; atrium-boot-notify test     # 8 sample mails with (TEST) in the subject, nothing installed
 systemctl enable --now atrium-update.timer

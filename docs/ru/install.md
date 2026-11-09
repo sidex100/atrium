@@ -399,6 +399,17 @@ cp -r $R/usr/local/share/gnome-shell/extensions/. $E/
 chown -R root:root $E && chmod -R u=rwX,go=rX $E && restorecon -R $E && ls $E
 ```
 
+В GJS OSK наш патч `patches/gjsosk/atrium-gjsosk.patch` добавляет кнопку языка: в верхней полосе
+клавиатуры, справа от кнопки настроек (над F1). На ней текущий язык (EN, RU), нажатие переключает на
+следующий; подпись меняется и при переключении Alt+Shift. Своей такой кнопки в GJS OSK нет. Значки на
+клавишах выключены (`show-icons false` в `view-atrium.ini`) — вместо них надписи Tab, Caps, Shift, Ctrl,
+Super, Alt, Enter, Backspace. Патч ставится после распаковки и после каждого обновления GJS OSK; GNOME
+подхватит его со следующего входа (перезагрузка):
+
+```bash
+cd /usr/local/share/gnome-shell/extensions/gjsosk@vishram1123.com && patch -p1 --backup --suffix=.orig < /root/atrium/patches/gjsosk/atrium-gjsosk.patch
+```
+
 Служба `atrium-sysload` раз в секунду пишет загрузку CPU/GPU/VCN и скорость сети в `/run/atrium-sysload/`,
 а Executor показывает эти строки в панели. Служба работает от одноразового пользователя без прав, без
 сети и с системой только на чтение. Данные берёт из счётчиков ядра: `gpu_busy_percent`, `vcn_busy_percent`
@@ -911,7 +922,7 @@ systemctl enable atrium-boot-notify.timer
 **Проверка, потом включение.**
 
 ```bash
-atrium-check                # 15 проверок, последняя строка: Problems:  none
+atrium-check                # 16 проверок, последняя строка: Problems:  none
 atrium-update busy          # free или in use: почему
 atrium-update test; atrium-boot-notify test     # 8 писем-образцов с (TEST) в теме, ничего не ставится
 systemctl enable --now atrium-update.timer
