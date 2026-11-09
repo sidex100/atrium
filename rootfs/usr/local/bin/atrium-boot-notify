@@ -150,7 +150,8 @@ check_network() {
     elif ! ping -c 2 -W 2 "$gw" >/dev/null 2>&1; then
         add "Gateway" "$gw does NOT answer ping"; warn "gateway $gw does not answer"
     fi
-    dns=$(getent hosts fedoraproject.org | awk '{print $1; exit}')
+    # 2026-11-09: IPv4 answer (ahostsv4): the home network is IPv4 only, "getent hosts" shows the AAAA first
+    dns=$(getent ahostsv4 fedoraproject.org | awk '{print $1; exit}')
     if [ -n "$dns" ]; then add "DNS" "ok (fedoraproject.org -> $dns)"
     else add "DNS" "FAILED to resolve fedoraproject.org"; warn "DNS does not resolve"; fi
 }
