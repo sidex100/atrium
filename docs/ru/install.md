@@ -351,8 +351,8 @@ $V dconf load / < /root/atrium/src/dconf/view-atrium.ini
 $V gsettings get org.gnome.desktop.interface clock-format
 ```
 
-Раскладки получаются такие: Alt+Shift переключает, Caps Lock включает английскую, Shift+Caps — русскую,
-правый Alt работает как AltGr.
+Раскладки получаются такие: Alt+Shift переключает, правый Alt работает как AltGr, Caps Lock — обычный
+Caps Lock.
 
 ## 10. Расширения GNOME и загрузка в панели
 
@@ -597,8 +597,11 @@ curl -fLO https://github.com/Windscribe/Desktop-App/releases/download/v2.24.13/g
 - **короткий тап не кликал.** Сервер шлёт «нажал» и «отпустил» в одном кадре, а GNOME такой клик теряет.
   Патч разделяет их паузой в 15 мс.
 - **заглавные буквы, кириллица и символы не печатались.** Сервер знает только простые клавиши. Патч
-  печатает каждый символ своей клавишей с нужным модификатором и сам выбирает раскладку (us или ru) под
-  символ. Работает при любой раскладке на ТВ.
+  печатает каждый символ своей клавишей с нужным модификатором. Какая раскладка включена, патч
+  спрашивает у GNOME (`gsettings get org.gnome.desktop.input-sources mru-sources`, первая в списке —
+  текущая), и если символу нужна другая — нажимает Alt+Shift. Работает при любой раскладке на ТВ.
+  До 09.11.2026 раскладку выбирали «вслепую» через Caps Lock (английская) и Shift+Caps (русская), и
+  Caps Lock не делал заглавные.
 
 ```bash
 mkdir -p /root/dist && cd /root/dist && curl -fL -A "Mozilla/5.0" -o urserver-3.14.0.2574.rpm https://www.unifiedremote.com/static/builds/server/linux-x64/2574/urserver-3.14.0.2574.rpm && echo "8fd30d91781711a4d6a4926c442a8907e46dd80ff0c376667b1efa15c01842ba  urserver-3.14.0.2574.rpm" | sha256sum -c && dnf -y install ./urserver-3.14.0.2574.rpm

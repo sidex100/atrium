@@ -1,11 +1,11 @@
 --- a/Core/Input/remote.lua	(urserver 3.14.0.2574)
 +++ b/Core/Input/remote.lua	(atrium)
-@@ -17,8 +17,126 @@
+@@ -17,8 +17,138 @@
  	keyboard.stroke(unpack({...}));
  end
  
-+-- >>> atrium typing (shared: Core/Input/remote.lua and Main/Keyboards/keyboard.lua; source
-+-- vortex/atrium/urserver/Core-Input-remote.lua, copied by build.py)
++-- >>> atrium typing (shared: Core/Input/remote.lua and Main/Keyboards/keyboard.lua; this block
++-- is the source, copied into keyboard.lua by src/urserver/build.py of the atrium repository)
 +-- 2026-10-04 atrium: on Linux (uinput) keyboard.text sends only plain keys: no Shift for
 +-- capitals, nothing for punctuation. Type US-layout ASCII key by key, Shift as separate events.
 +local US_KEYS = {
@@ -84,20 +84,32 @@
 +	if m then os.sleep(5); keyboard.up(m); end
 +end
 +
-+-- 2026-10-04 atrium: Unified Remote cannot see which layout is active, so before a character the
-+-- layout it belongs to is selected with the xkb option grp:shift_caps_switch:
-+-- Caps Lock = first layout (us), Shift+Caps Lock = last layout (ru).
-+local function select_layout(layout)
-+	local ru = (layout == "ru");
-+	if ru then keyboard.down("shift"); os.sleep(5); end
-+	keyboard.down("capslock");
-+	os.sleep(10);
-+	keyboard.up("capslock");
-+	if ru then os.sleep(5); keyboard.up("shift"); end
-+	os.sleep(10);
++-- 2026-11-09 atrium: the active layout is asked from GNOME: it keeps the input sources in
++-- org.gnome.desktop.input-sources mru-sources, the active one first (it notices Alt+Shift too).
++-- Two layouts, us and ru; anything else counts as us.
++local function current_layout()
++	local r = os.execute("gsettings get org.gnome.desktop.input-sources mru-sources | grep -qF \"[('xkb', 'ru')\"");
++	if r == 0 or r == true then return "ru"; end
++	return "us";
 +end
 +
-+-- state.layout = layout selected during this call (nil = unknown)
++-- 2026-11-09 atrium: switch only when the character needs the other layout, with the standard
++-- Alt+Shift (xkb option grp:alt_shift_toggle; Caps Lock stays Caps Lock), then wait until GNOME
++-- has noted the switch (up to ~0.5 s), so the next character asks the right answer.
++-- Before (2026-10-04): Caps Lock / Shift+Caps Lock picked us / ru blindly (grp:shift_caps_switch).
++local function select_layout(layout)
++	if current_layout() == layout then return; end
++	keyboard.down("leftalt"); os.sleep(5);
++	keyboard.down("shift"); os.sleep(10);
++	keyboard.up("shift"); os.sleep(5);
++	keyboard.up("leftalt");
++	for _ = 1, 20 do
++		os.sleep(25);
++		if current_layout() == layout then return; end
++	end
++end
++
++-- state.layout = layout checked or selected during this call (nil = not checked yet)
 +local function type_text(text, state)
 +	local i = 1;
 +	while i <= #text do
@@ -128,7 +140,7 @@
  end
  
  actions.MouseDown = function(...)
-@@ -30,11 +148,19 @@
+@@ -30,11 +160,19 @@
  end
  
  actions.Click = function(...)
@@ -150,7 +162,7 @@
  end
  
  actions.MoveBy = function(x, y)
-@@ -63,4 +189,4 @@
+@@ -63,4 +201,4 @@
  
  actions.ZoomOut = function ()
  	mouse.zoomout();
@@ -278,11 +290,11 @@
 +-- reworked for Linux/uinput: every key types its own character whatever layout is active on atrium
 +-- (typing code shared with Core/Input), Shift and Caps work like on a phone, Ctrl/Alt/Win combos
 +-- are sent as separate key events. Original: keyboard.lua.bak-20261004.
-+-- Built by vortex/atrium/urserver/build.py from keyboard.tmpl.lua; do not edit on the server.
++-- Built by src/urserver/build.py (repository atrium) from keyboard.tmpl.lua; do not edit on the box.
  local server = libs.server;
  local keyboard = libs.keyboard;
  
-@@ -6,59 +11,217 @@
+@@ -6,59 +11,229 @@
  texts = {};
  icons = {};
  
@@ -306,8 +318,8 @@
 -	history = {}
 -	modifiers = {};
 -	modifying = false;
-+-- >>> atrium typing (shared: Core/Input/remote.lua and Main/Keyboards/keyboard.lua; source
-+-- vortex/atrium/urserver/Core-Input-remote.lua, copied by build.py)
++-- >>> atrium typing (shared: Core/Input/remote.lua and Main/Keyboards/keyboard.lua; this block
++-- is the source, copied into keyboard.lua by src/urserver/build.py of the atrium repository)
 +-- 2026-10-04 atrium: on Linux (uinput) keyboard.text sends only plain keys: no Shift for
 +-- capitals, nothing for punctuation. Type US-layout ASCII key by key, Shift as separate events.
 +local US_KEYS = {
@@ -392,20 +404,32 @@
 +	if m then os.sleep(5); keyboard.up(m); end
 +end
 +
-+-- 2026-10-04 atrium: Unified Remote cannot see which layout is active, so before a character the
-+-- layout it belongs to is selected with the xkb option grp:shift_caps_switch:
-+-- Caps Lock = first layout (us), Shift+Caps Lock = last layout (ru).
-+local function select_layout(layout)
-+	local ru = (layout == "ru");
-+	if ru then keyboard.down("shift"); os.sleep(5); end
-+	keyboard.down("capslock");
-+	os.sleep(10);
-+	keyboard.up("capslock");
-+	if ru then os.sleep(5); keyboard.up("shift"); end
-+	os.sleep(10);
++-- 2026-11-09 atrium: the active layout is asked from GNOME: it keeps the input sources in
++-- org.gnome.desktop.input-sources mru-sources, the active one first (it notices Alt+Shift too).
++-- Two layouts, us and ru; anything else counts as us.
++local function current_layout()
++	local r = os.execute("gsettings get org.gnome.desktop.input-sources mru-sources | grep -qF \"[('xkb', 'ru')\"");
++	if r == 0 or r == true then return "ru"; end
++	return "us";
 +end
 +
-+-- state.layout = layout selected during this call (nil = unknown)
++-- 2026-11-09 atrium: switch only when the character needs the other layout, with the standard
++-- Alt+Shift (xkb option grp:alt_shift_toggle; Caps Lock stays Caps Lock), then wait until GNOME
++-- has noted the switch (up to ~0.5 s), so the next character asks the right answer.
++-- Before (2026-10-04): Caps Lock / Shift+Caps Lock picked us / ru blindly (grp:shift_caps_switch).
++local function select_layout(layout)
++	if current_layout() == layout then return; end
++	keyboard.down("leftalt"); os.sleep(5);
++	keyboard.down("shift"); os.sleep(10);
++	keyboard.up("shift"); os.sleep(5);
++	keyboard.up("leftalt");
++	for _ = 1, 20 do
++		os.sleep(25);
++		if current_layout() == layout then return; end
++	end
++end
++
++-- state.layout = layout checked or selected during this call (nil = not checked yet)
 +local function type_text(text, state)
 +	local i = 1;
 +	while i <= #text do

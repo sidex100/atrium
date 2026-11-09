@@ -175,6 +175,14 @@ repository's `settings.json`.
 If a long press in the app gets "stuck" (this is drag mode: the left button stays held until the next tap),
 GNOME does not accept clicks from anyone, including RDP. One more tap fixes it.
 
+## Caps Lock does not type capitals
+
+**Cause.** The old version of our Unified Remote patch (before 09.11.2026) picked the layout "blindly" with
+the option `grp:shift_caps_switch`: Caps Lock = English, Shift+Caps = Russian. With it Caps Lock stopped
+turning on capitals on every keyboard. **Fix:** the current patch asks GNOME for the layout and switches with
+Alt+Shift; keep `['grp:alt_shift_toggle', 'lv3:ralt_switch']` in the `xkb-options` of the user `view` (as in
+`src/dconf/view-atrium.ini`).
+
 ## RetroArch: window in the corner and off screen
 
 **Cause.** At 250 % scaling RetroArch requests a 3840×2160 fullscreen surface in logical pixels. **Fix:**

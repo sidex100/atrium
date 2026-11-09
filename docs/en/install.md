@@ -359,8 +359,8 @@ $V dconf load / < /root/atrium/src/dconf/view-atrium.ini
 $V gsettings get org.gnome.desktop.interface clock-format
 ```
 
-The keyboard layouts work like this: Alt+Shift switches, Caps Lock selects English, Shift+Caps selects
-Russian, right Alt works as AltGr.
+The keyboard layouts work like this: Alt+Shift switches, right Alt works as AltGr, Caps Lock is a normal
+Caps Lock.
 
 ## 10. GNOME extensions and load in the panel
 
@@ -609,8 +609,11 @@ on Wayland it works through `/dev/uinput`, and it has two flaws that we fix with
 - **a short tap did not click.** The server sends "press" and "release" in one frame, and GNOME loses
   such a click. The patch separates them with a 15 ms pause.
 - **capital letters, Cyrillic and symbols did not type.** The server knows only simple keys. The patch
-  types each character with its own key and the right modifier, and picks the layout (us or ru) for the
-  character by itself. It works with any layout active on the TV.
+  types each character with its own key and the right modifier. It asks GNOME which layout is active
+  (`gsettings get org.gnome.desktop.input-sources mru-sources`, the first one is the current one) and
+  presses Alt+Shift when the character needs the other layout. It works with any layout active on the TV.
+  Before 09.11.2026 the layout was picked "blindly" with Caps Lock (English) and Shift+Caps (Russian), and
+  Caps Lock did not type capitals.
 
 ```bash
 mkdir -p /root/dist && cd /root/dist && curl -fL -A "Mozilla/5.0" -o urserver-3.14.0.2574.rpm https://www.unifiedremote.com/static/builds/server/linux-x64/2574/urserver-3.14.0.2574.rpm && echo "8fd30d91781711a4d6a4926c442a8907e46dd80ff0c376667b1efa15c01842ba  urserver-3.14.0.2574.rpm" | sha256sum -c && dnf -y install ./urserver-3.14.0.2574.rpm
