@@ -107,6 +107,34 @@ streamed over RDP, and the GNOME session crashed; on Wayland that ends the sessi
 once per boot. **Fix:** timed login in `/etc/gdm/custom.conf`: 5 seconds after the session ends, `view` logs in
 again, and RDP can reconnect without a reboot.
 
+## RDP drops when a window opens (Fedora 45)
+
+**Symptom.** Since the move to Fedora 45 (GNOME Remote Desktop 51), RDP from Windows drops almost every session at
+the moment a window or menu opens: a browser, Settings, an icon in the panel. Sometimes mstsc shows "Because of an
+error in data decompression on the client side, the remote session was disconnected", code `0xc08`; sometimes it
+closes silently, as if the session's close button was pressed. After reconnecting, the window that was opening is
+there, so the box is fine. The PC log (`Microsoft-Windows-TerminalServices-RDPClient/Operational`, event 1026) shows
+"Reason= 3080" or "Reason= 1"; the `gnome-remote-desktop` log on the box shows `disconnect provider ultimatum` (the
+client itself asked to close the session) or `Broken pipe`. On Fedora 44 (GNOME Remote Desktop 50.2), with the same
+mstsc and the same FreeRDP 3.32.2, this never happened.
+
+**Cause.** The Windows client cannot decompress data that the GNOME 51 RDP server compresses. This is the protocol's
+general compression on top of the whole stream (a leftover from the modem days); the picture is H.264 already, so on
+a home network it saves almost nothing, about 1 Mbit/s at worst.
+
+**Fix, on the PC.** Turn compression off in the `.rdp` connection file: `compression:i:0` (the default is `1`). If the
+file is signed (`rdpsign`, to get rid of the warning window), sign it again in PowerShell as administrator:
+
+```powershell
+$f = "$([Environment]::GetFolderPath('Desktop'))\atrium.rdp"
+(Get-Content $f -Encoding Unicode) -replace '^compression:i:1$','compression:i:0' | Set-Content $f -Encoding Unicode
+rdpsign.exe /sha256 <SHA-1 thumbprint of the signing certificate> $f
+```
+
+Nothing changes on the box. If the drops stay, the next step is to turn off hardware H.264 encoding in GNOME Remote
+Desktop (the server switches to another codec). For us this lasted from 05.11 to 09.11.2026; `compression:i:0` fixed
+it.
+
 ## Dropped frames in mpv at 4K 120 Hz with HDR
 
 **Cause.** A 1080p VC-1 remux stuttered: the mpv statistics (`i`) showed hundreds of dropped frames. There were
