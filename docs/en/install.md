@@ -580,6 +580,14 @@ Set-SmbClientConfiguration -EnableInsecureGuestLogons $true -RequireSecuritySign
 also in `smb.conf`) — check yours: the interface with `ip -br link`, the workgroup on the PC in PowerShell
 with `(Get-CimInstance Win32_ComputerSystem).Workgroup`. `WORKGROUP` is the Windows default.
 
+**Mac.** From a Mac the share opens as `smb://atrium.lan/media` (as a guest). macOS keeps its own file
+metadata (Finder tags, "downloaded from the internet") and on a foreign server writes it next to the file as
+`._name` files (AppleDouble), plus `.DS_Store` in folders. That is why `smb.conf` turns on the `fruit` module
+(`vfs objects = catia fruit streams_xattr`): the Mac metadata lives in the extended attributes of the file
+itself (XFS keeps them), there are no `._*` files, and the share refuses `.DS_Store` (`veto files`).
+`streams_xattr` also keeps Windows streams (`Zone.Identifier`). `._*` files created before `fruit` was on
+are removed once: `find /srv -name '._*' -type f -delete`.
+
 **Wi-Fi takes priority over the wire** (optional). If you connect to any Wi-Fi, internet traffic goes
 through it while it stays connected. The home network always stays on the wire:
 

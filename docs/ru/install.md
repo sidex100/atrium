@@ -571,6 +571,14 @@ Set-SmbClientConfiguration -EnableInsecureGuestLogons $true -RequireSecuritySign
 она же в `smb.conf`) — проверь свои: интерфейс — `ip -br link`, группу — на ПК в PowerShell
 `(Get-CimInstance Win32_ComputerSystem).Workgroup`. `WORKGROUP` — значение Windows по умолчанию.
 
+**Mac.** С Мака шара открывается как `smb://atrium.lan/media` (гостем). macOS хранит у файлов свои метаданные
+(метки Finder, «скачано из интернета») и на чужом сервере пишет их рядом в файлы `._имя` (AppleDouble), а в
+папки — `.DS_Store`. В `smb.conf` поэтому включён модуль `fruit` (`vfs objects = catia fruit streams_xattr`):
+метаданные Мака лежат в расширенных атрибутах самого файла (XFS их держит), файлов `._*` нет, `.DS_Store`
+шара не принимает (`veto files`). Заодно `streams_xattr` хранит и потоки Windows (`Zone.Identifier`).
+`._*`, созданные до включения `fruit`, удаляются один раз:
+`find /srv -name '._*' -type f -delete`.
+
 **Wi-Fi важнее провода** (по желанию). Если подключить любой Wi-Fi, интернет пойдёт через него, пока он
 подключён. Домашняя сеть всегда остаётся на проводе:
 
