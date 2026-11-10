@@ -1018,6 +1018,20 @@ root password is now needed only at the TV (Ctrl+Alt+F3, log in as root, `exit`,
 GNOME) — make sure you remember it. Any new user who needs SSH — add to `AllowUsers` and `systemctl reload
 sshd`.
 
+**GNOME and the new users.** Once it sees one more user, GNOME adds "Log Out" and "Switch User" to the
+power menu. To keep them off the TV, we mark the SSH user as a system account for GNOME (AccountsService;
+it also disappears from Settings and the login screen) and forbid user switching (`00-atrium-session`,
+locked like the dark theme):
+
+```bash
+printf '[User]\nSystemAccount=true\n' > /var/lib/AccountsService/users/$U && chmod 600 /var/lib/AccountsService/users/$U && restorecon -v /var/lib/AccountsService/users/$U && install -m 644 /root/atrium/rootfs/etc/dconf/db/local.d/00-atrium-session /etc/dconf/db/local.d/ && install -m 644 /root/atrium/rootfs/etc/dconf/db/local.d/locks/00-atrium-session /etc/dconf/db/local.d/locks/ && restorecon -Rv /etc/dconf/db/local.d && dconf update && systemctl reboot
+```
+
+After the reboot — only "Restart" and "Power Off". GNOME also shows "Log Out" while several sessions are
+open (SSH is a session too), but it recalculates the menu only at login and when users or settings change —
+hence the reboot at the end. Do not set `disable-log-out`: with it GNOME also removes power off and
+restart.
+
 The commands in this guide are run as root: `sudo -i` first. Files go to the box with `scp` into `/tmp` as
 your own user (root has no SSH any more).
 

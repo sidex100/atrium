@@ -1,0 +1,2 @@
+# 2026-11-10: Switch User cannot be turned back on
+/org/gnome/desktop/lockdown/disable-user-switching

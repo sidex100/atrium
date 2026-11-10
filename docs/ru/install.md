@@ -993,6 +993,20 @@ rm -f /etc/ssh/sshd_config.d/01-permitrootlogin.conf && sed -i "/^Include \/etc\
 проверь, что помнишь его. Новый пользователь, которому нужен SSH, — добавить в `AllowUsers` и `systemctl
 reload sshd`.
 
+**GNOME и новые пользователи.** Увидев ещё одного пользователя, GNOME добавляет в меню выключения
+«Log Out» и «Switch User». Чтобы на ТВ их не было, пользователя SSH помечаем для GNOME как системного
+(AccountsService; заодно его нет в настройках и на экране входа) и запрещаем смену пользователя
+(`00-atrium-session`, замок — как у тёмной темы):
+
+```bash
+printf '[User]\nSystemAccount=true\n' > /var/lib/AccountsService/users/$U && chmod 600 /var/lib/AccountsService/users/$U && restorecon -v /var/lib/AccountsService/users/$U && install -m 644 /root/atrium/rootfs/etc/dconf/db/local.d/00-atrium-session /etc/dconf/db/local.d/ && install -m 644 /root/atrium/rootfs/etc/dconf/db/local.d/locks/00-atrium-session /etc/dconf/db/local.d/locks/ && restorecon -Rv /etc/dconf/db/local.d && dconf update && systemctl reboot
+```
+
+После перезагрузки — только «Restart» и «Power Off». «Log Out» GNOME показывает ещё и при нескольких
+открытых сеансах (SSH тоже сеанс), но пересчитывает меню только при входе и при смене пользователей или
+настроек — поэтому перезагрузка в конце. `disable-log-out` не ставь: с ним GNOME убирает заодно выключение
+и перезагрузку.
+
 Команды в этом руководстве — от root: сначала `sudo -i`. Файлы на бокс — `scp` в `/tmp` своим
 пользователем (у root SSH больше нет).
 

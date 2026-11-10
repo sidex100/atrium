@@ -1,0 +1,4 @@
+# 2026-11-10: atrium TV - no Switch User in the menu (GNOME shows it when it sees other users)
+# 2026-11-10: NOT disable-log-out: gnome-session then also refuses power off and restart (both vanished from the menu)
+[org/gnome/desktop/lockdown]
+disable-user-switching=true
