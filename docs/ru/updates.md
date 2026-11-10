@@ -53,6 +53,7 @@ gnome-software и PackageKit **не установлены**, поэтому н�
 - `/etc/dnf/dnf.conf`
 - `/etc/chrony.conf` (сюда установщик записал наш NTP-сервер)
 - `/etc/postfix/main.cf`, `/etc/postfix/header_checks`, `/etc/aliases` (почта, шаг 20)
+- `/etc/ssh/sshd_config`, `/etc/sudoers` (вход по SSH своим пользователем, шаг 21)
 - метки SELinux `file_contexts.local`
 
 Репозиторий Chrome с Fedora 45 лежит в `/usr/share/dnf5/repos.d/google-chrome.repo` (пакет

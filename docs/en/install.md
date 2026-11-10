@@ -107,7 +107,9 @@ On the box (password login one last time: `ssh root@192.168.0.42`):
 install -d -m 700 /root/.ssh && tr -d '\r' < /tmp/atrium_ed25519.pub >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && restorecon -R /root/.ssh && rm -f /tmp/atrium_ed25519.pub
 ```
 
-From now on, log in like this: `ssh -i ~/.ssh/atrium_ed25519 root@192.168.0.42`.
+From now on, log in like this: `ssh -i ~/.ssh/atrium_ed25519 root@192.168.0.42`. Root is the easiest for the
+installation; how to log in afterwards — as root or as your own user with `sudo` — is a matter of taste, and
+what we do is in step 21.
 
 Now put this repository on the box in `/root/atrium`. If you have access to it on GitHub:
 
@@ -798,8 +800,9 @@ Expected:
 - all services active;
 - watchdog in state `active`.
 
-The main installation ends here. Two optional steps follow, independent of each other: 19 — only after
-everything else has been checked, 20 — mail, reports and automatic updates.
+The main installation ends here. Three optional steps follow, independent of each other: 19 — only after
+everything else has been checked, 20 — mail, reports and automatic updates, 21 — SSH login as your own user
+instead of root.
 
 ## 19. HDMI always "connected": RDP while the TV is on another input (optional, after the TV is set up)
 
@@ -967,5 +970,55 @@ systemctl enable --now atrium-update.timer
 - to switch automatic updates off — `systemctl disable --now atrium-update.timer`, then update by hand as in
   [updates.md](updates.md);
 - `dnf update` never moves to a new Fedora release: the upgrade to 45 is by hand only (updates.md).
+
+## 21. SSH login: root or your own user (optional)
+
+**Whatever suits you.** It does not affect how atrium works: you can log in as root with a key (as in
+step 4), as root with a password, or as your own user from the `wheel` group with `sudo` — with a key or
+with a password.
+
+**What we do:** root SSH login is closed, the root password is only for logging in at the TV with a
+keyboard; we log in as our own `wheel` user, with a key only (the users have no passwords), `sudo` without a
+password. Scripts that log in to the box on their own get one more user just like it, with its own key, in
+the `systemd-journal` group (the journal without `sudo`).
+
+Below is one user; replace `owner` with your own name. The key is the same as in step 4 (a copy from root).
+Run the commands in one root session — `U` is set in it. Keep it open until the new login is checked.
+
+The user and the key:
+
+```bash
+U=owner
+useradd -G wheel $U && install -d -o $U -g $U -m 700 /home/$U/.ssh && install -o $U -g $U -m 600 /root/.ssh/authorized_keys /home/$U/.ssh/authorized_keys && restorecon -R /home/$U/.ssh
+```
+
+`sudo` without a password: in Fedora `wheel` needs a password by default, and the user has none. We edit
+a copy of `/etc/sudoers`, check it with `visudo`, put it in place; the last command must answer `root`:
+
+```bash
+sed -e 's|^%wheel\tALL=(ALL)\tALL$|# %wheel\tALL=(ALL)\tALL|' -e 's|^# %wheel\tALL=(ALL)\tNOPASSWD: ALL$|%wheel\tALL=(ALL)\tNOPASSWD: ALL|' /etc/sudoers > /tmp/sudoers.new && visudo -cf /tmp/sudoers.new && install -o root -g root -m 440 /tmp/sudoers.new /etc/sudoers && rm -f /tmp/sudoers.new && restorecon /etc/sudoers && runuser -u $U -- sudo -n id -un
+```
+
+Check from the PC: `ssh -i ~/.ssh/atrium_ed25519 owner@192.168.0.42`, then `sudo -i`.
+
+SSH — key only, your own user only, root closed. The **Allow root SSH login with password** box in step 3
+created `/etc/ssh/sshd_config.d/01-permitrootlogin.conf` with `PermitRootLogin yes`: it is read first and
+overrides the rest, so we delete it (no package owns it, it will not come back) and put our lines into
+`sshd_config` above `Include` — sshd takes the first value of a parameter:
+
+```bash
+rm -f /etc/ssh/sshd_config.d/01-permitrootlogin.conf && sed -i "/^Include \/etc\/ssh\/sshd_config.d\/\*.conf$/i PermitRootLogin no\nPasswordAuthentication no\nAllowUsers $U\n" /etc/ssh/sshd_config && sshd -t && systemctl reload sshd && rm -f /root/.ssh/authorized_keys && sshd -T | grep -Ei '^(permitrootlogin|passwordauthentication|allowusers) '
+```
+
+To keep root with a key — put `prohibit-password` instead of `no`, add `root` to `AllowUsers` and do not
+delete `/root/.ssh/authorized_keys`.
+
+Check from the PC: `ssh root@192.168.0.42` — `Permission denied (publickey…)`, your own user gets in. The
+root password is now needed only at the TV (Ctrl+Alt+F3, log in as root, `exit`, Ctrl+Alt+F2 — back to
+GNOME) — make sure you remember it. Any new user who needs SSH — add to `AllowUsers` and `systemctl reload
+sshd`.
+
+The commands in this guide are run as root: `sudo -i` first. Files go to the box with `scp` into `/tmp` as
+your own user (root has no SSH any more).
 
 Next — [updates and what to check after them](updates.md).

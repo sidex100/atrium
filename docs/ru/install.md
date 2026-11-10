@@ -102,7 +102,8 @@ scp "$env:USERPROFILE\.ssh\atrium_ed25519.pub" root@192.168.0.42:/tmp/
 install -d -m 700 /root/.ssh && tr -d '\r' < /tmp/atrium_ed25519.pub >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys && restorecon -R /root/.ssh && rm -f /tmp/atrium_ed25519.pub
 ```
 
-Дальше входи так: `ssh -i ~/.ssh/atrium_ed25519 root@192.168.0.42`.
+Дальше входи так: `ssh -i ~/.ssh/atrium_ed25519 root@192.168.0.42`. Для установки root удобнее всего; как
+ходить потом — root или свой пользователь с `sudo` — дело вкуса, и как делаем мы — в шаге 21.
 
 Теперь положи этот репозиторий на бокс в `/root/atrium`. Если у тебя есть доступ к нему на GitHub:
 
@@ -781,8 +782,9 @@ cat /sys/class/watchdog/watchdog0/state
 - все службы active;
 - watchdog в состоянии `active`.
 
-На этом основная установка закончена. Дальше два шага по желанию, независимые друг от друга: 19 — только
-после того, как всё остальное проверено, 20 — почта, отчёты и автообновление.
+На этом основная установка закончена. Дальше три шага по желанию, независимые друг от друга: 19 — только
+после того, как всё остальное проверено, 20 — почта, отчёты и автообновление, 21 — вход по SSH своим
+пользователем вместо root.
 
 ## 19. HDMI всегда «подключён»: RDP, пока ТВ на другом входе (по желанию, после настройки ТВ)
 
@@ -944,5 +946,54 @@ systemctl enable --now atrium-update.timer
 - выключить автообновление — `systemctl disable --now atrium-update.timer`, обновляться руками, как в
   [updates.md](updates.md);
 - `dnf update` не переходит на новую версию Fedora: переход на 45 — только руками (updates.md).
+
+## 21. Вход по SSH: root или свой пользователь (по желанию)
+
+**Как удобнее.** На работу atrium это не влияет: можно ходить под root по ключу (как в шаге 4), под root
+по паролю или своим пользователем из группы `wheel` с `sudo` — по ключу или по паролю.
+
+**Мы делаем так:** root по SSH закрыт, пароль root — только для входа с клавиатуры у ТВ; заходим своим
+пользователем из `wheel`, только по ключу (паролей у пользователей нет), `sudo` без пароля. Для скриптов,
+которые ходят на бокс сами, — ещё один такой же пользователь со своим ключом, в группе `systemd-journal`
+(журнал без `sudo`).
+
+Ниже — один пользователь; `owner` замени на своё имя. Ключ тот же, что в шаге 4 (копия из root). Команды
+идут в одной сессии root: в ней же задаётся `U`. Держи её открытой, пока не проверишь новый вход.
+
+Пользователь и ключ:
+
+```bash
+U=owner
+useradd -G wheel $U && install -d -o $U -g $U -m 700 /home/$U/.ssh && install -o $U -g $U -m 600 /root/.ssh/authorized_keys /home/$U/.ssh/authorized_keys && restorecon -R /home/$U/.ssh
+```
+
+`sudo` без пароля: в Fedora у `wheel` по умолчанию — с паролем, а пароля у пользователя нет. Правим копию
+`/etc/sudoers`, проверяем `visudo`, ставим на место; последняя команда должна ответить `root`:
+
+```bash
+sed -e 's|^%wheel\tALL=(ALL)\tALL$|# %wheel\tALL=(ALL)\tALL|' -e 's|^# %wheel\tALL=(ALL)\tNOPASSWD: ALL$|%wheel\tALL=(ALL)\tNOPASSWD: ALL|' /etc/sudoers > /tmp/sudoers.new && visudo -cf /tmp/sudoers.new && install -o root -g root -m 440 /tmp/sudoers.new /etc/sudoers && rm -f /tmp/sudoers.new && restorecon /etc/sudoers && runuser -u $U -- sudo -n id -un
+```
+
+Проверь с ПК: `ssh -i ~/.ssh/atrium_ed25519 owner@192.168.0.42`, затем `sudo -i`.
+
+SSH — только ключ, только свой пользователь, root закрыт. Галка **Allow root SSH login with password** в
+шаге 3 положила `/etc/ssh/sshd_config.d/01-permitrootlogin.conf` с `PermitRootLogin yes`: он читается
+первым и перебивает остальное, поэтому его удаляем (пакетам он не принадлежит, сам не вернётся), а свои
+строки ставим в `sshd_config` над `Include` — sshd берёт первое значение параметра:
+
+```bash
+rm -f /etc/ssh/sshd_config.d/01-permitrootlogin.conf && sed -i "/^Include \/etc\/ssh\/sshd_config.d\/\*.conf$/i PermitRootLogin no\nPasswordAuthentication no\nAllowUsers $U\n" /etc/ssh/sshd_config && sshd -t && systemctl reload sshd && rm -f /root/.ssh/authorized_keys && sshd -T | grep -Ei '^(permitrootlogin|passwordauthentication|allowusers) '
+```
+
+Хочешь оставить root по ключу — вместо `no` поставь `prohibit-password`, добавь `root` в `AllowUsers` и не
+удаляй `/root/.ssh/authorized_keys`.
+
+Проверка с ПК: `ssh root@192.168.0.42` — `Permission denied (publickey…)`, свой пользователь заходит.
+Пароль root нужен теперь только у ТВ (Ctrl+Alt+F3, вход root, `exit`, Ctrl+Alt+F2 — обратно в GNOME) —
+проверь, что помнишь его. Новый пользователь, которому нужен SSH, — добавить в `AllowUsers` и `systemctl
+reload sshd`.
+
+Команды в этом руководстве — от root: сначала `sudo -i`. Файлы на бокс — `scp` в `/tmp` своим
+пользователем (у root SSH больше нет).
 
 Дальше — [обновления и что после них проверять](updates.md).

@@ -55,6 +55,7 @@ Checked with `rpm -Va` on atrium (2026-10-13): of all package files, only these 
 - `/etc/dnf/dnf.conf`
 - `/etc/chrony.conf` (the installer wrote our NTP server here)
 - `/etc/postfix/main.cf`, `/etc/postfix/header_checks`, `/etc/aliases` (mail, step 20)
+- `/etc/ssh/sshd_config`, `/etc/sudoers` (SSH login as your own user, step 21)
 - SELinux labels `file_contexts.local`
 
 Since Fedora 45 the Chrome repository lives in `/usr/share/dnf5/repos.d/google-chrome.repo` (the
