@@ -372,7 +372,7 @@ extensions:
 
 | Extension | What it does |
 |---|---|
-| `atrium-lock` | blocks clicks and menus on Freon and the desktop widgets (Executor is locked by its own setting); hides the GJS OSK "Screen Keyboard" toggle from the quick settings — it only removes and brings back the keyboard button in the top bar, and the button should always be there; puts the keyboard button left of the temperature |
+| `atrium-lock` | the clock in the middle of the top bar does not open the calendar with notifications; blocks clicks and menus on Freon and the desktop widgets (Executor is locked by its own setting) — the clock and Freon menus do not open by hover either while another top bar menu is open (GNOME switches top bar menus by hover regardless of "not clickable", so their menus are taken out of the top bar menu list); hides the GJS OSK "Screen Keyboard" toggle from the quick settings — it only removes and brings back the keyboard button in the top bar, and the button should always be there; puts the keyboard button left of the temperature |
 | `atrium-brightness-value` | shows the exact HDR brightness value next to the slider and on the bar at the bottom |
 | `atrium-no-dnd-icon` | hides the "Do Not Disturb" bell: there are no notifications on the TV at all |
 

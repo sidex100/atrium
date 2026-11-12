@@ -9,6 +9,13 @@
 // 2026-10-14: the keyboard button goes right before the temperature (user: "keyboard left of the
 // temperature"). GJS OSK re-creates the button on every monitor change (also on atrium-hdr on/off), so
 // the order is checked again whenever something is added to the top bar.
+// 2026-11-10: the clock in the middle of the top bar stops reacting -> no calendar / notifications popup
+// (user: "nobody adds calendar events, and the click often lands there"). Panel._toggleMenu skips a
+// non-reactive button, so the Super+V / Super+M shortcut does not open it either.
+// 2026-11-11: with another top bar menu open (quick settings), moving the mouse onto the clock still opened
+// the calendar: PopupMenuManager switches menus by hover and picks actors with PickMode.ALL (reactive or
+// not). So the clock menu is also taken out of the panel menu manager; disable() puts it back.
+// 2026-11-11: the same hover opened the Freon menu (Temperature, Sensor Settings) - Freon gets the same lock.
 // /usr/local/share/gnome-shell/extensions/atrium-lock@atrium.example.com/
 import GLib from 'gi://GLib';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -22,6 +29,20 @@ function setReactive(actor, on) {
     actor.reactive = on;
     actor.can_focus = on;
     actor.track_hover = on;
+}
+
+// a top bar button with a menu: no click, and its menu is out of the panel menu manager (no hover switch)
+function lockButton(button) {
+    button.menu?.close();
+    setReactive(button, false);
+    if (button.menu)
+        Main.panel.menuManager.removeMenu(button.menu);
+}
+
+function unlockButton(button) {
+    setReactive(button, true);
+    if (button.menu)
+        Main.panel.menuManager.addMenu(button.menu);
 }
 
 export default class AtriumLock extends Extension {
@@ -51,11 +72,13 @@ export default class AtriumLock extends Extension {
     }
 
     _apply() {
+        const clock = Main.panel.statusArea.dateMenu;
+        if (clock)
+            lockButton(clock);
+
         const freon = Main.panel.statusArea.freonMenu;
-        if (freon) {
-            freon.menu?.close();
-            setReactive(freon, false);
-        }
+        if (freon)
+            lockButton(freon);
 
         const az = this._azclock();
         // Desktop Widgets re-creates its widgets when its widget list changes
@@ -111,9 +134,12 @@ export default class AtriumLock extends Extension {
         this._boxIds = null;
         this._disconnectAz();
 
+        const clock = Main.panel.statusArea.dateMenu;
+        if (clock)
+            unlockButton(clock);
         const freon = Main.panel.statusArea.freonMenu;
         if (freon)
-            setReactive(freon, true);
+            unlockButton(freon);
         this._azclock()?.widgets?.forEach(widget => {
             widget.reactive = true;
         });
